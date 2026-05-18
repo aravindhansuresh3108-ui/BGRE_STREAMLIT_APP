@@ -1,6 +1,9 @@
 import streamlit as st
+from pathlib import Path
 
 st.set_page_config(page_title="BGR Energy POC Dashboards", layout="wide")
+
+BASE_DIR = Path(__file__).parent
 
 page = st.sidebar.radio(
     "Select Dashboard",
@@ -8,10 +11,10 @@ page = st.sidebar.radio(
 )
 
 if page == "ME2J Procurement":
-    exec(open("me2j_app.py", encoding="utf-8").read())
+    exec(open(BASE_DIR / "me2j_app.py", encoding="utf-8").read())
 
 elif page == "MBBS Inventory":
-    exec(open("mbbs_app.py", encoding="utf-8").read())
+    exec(open(BASE_DIR / "mbbs_app.py", encoding="utf-8").read())
 
 elif page == "ZFI Vendor SOA":
-    exec(open("zfi_app.py", encoding="utf-8").read())
+   
