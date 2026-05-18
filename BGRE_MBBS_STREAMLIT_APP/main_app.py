@@ -1,7 +1,10 @@
 import streamlit as st
 from pathlib import Path
 
-st.set_page_config(page_title="BGR Energy POC Dashboards", layout="wide")
+st.set_page_config(
+    page_title="BGR Energy POC Dashboards",
+    layout="wide"
+)
 
 BASE_DIR = Path(__file__).parent
 
@@ -17,4 +20,4 @@ elif page == "MBBS Inventory":
     exec(open(BASE_DIR / "mbbs_app.py", encoding="utf-8").read())
 
 elif page == "ZFI Vendor SOA":
-   
+    exec(open(BASE_DIR / "zfi_app.py", encoding="utf-8").read())
