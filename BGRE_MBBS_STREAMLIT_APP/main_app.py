@@ -9,8 +9,8 @@ def login():
 
     if st.button("Login"):
         if (
-            username == st.secrets["APP_USERNAME"]
-            and password == st.secrets["APP_PASSWORD"]
+            username == "BGRE_CLIENT"
+           and password == "BGRE@123"
         ):
             st.session_state["logged_in"] = True
             st.rerun()
