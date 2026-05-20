@@ -1,10 +1,31 @@
 import streamlit as st
 from pathlib import Path
 
-st.set_page_config(
-    page_title="BGR Energy POC Dashboards",
-    layout="wide"
-)
+def login():
+    st.title("BGRE Dashboard Login")
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        if (
+            username == st.secrets["APP_USERNAME"]
+            and password == st.secrets["APP_PASSWORD"]
+        ):
+            st.session_state["logged_in"] = True
+            st.rerun()
+        else:
+            st.error("Invalid username or password")
+
+
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+
+if not st.session_state["logged_in"]:
+    login()
+    st.stop()
+
+st.set_page_config(page_title="BGR Energy POC Dashboards", layout="wide")
 
 BASE_DIR = Path(__file__).parent
 
