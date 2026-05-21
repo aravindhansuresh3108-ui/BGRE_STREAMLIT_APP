@@ -5,6 +5,26 @@ import pandas as pd
 import plotly.express as px
 import snowflake.connector
 
+# ------------------------------------------------------------
+# Chart Colors - visual enhancement only
+# ------------------------------------------------------------
+CHART_COLORS = {
+    "wbs": "#1E88E5",          # Blue
+    "material": "#43A047",     # Green
+    "valuation_area": "#FB8C00", # Orange
+    "valuation_type": "#8E24AA", # Purple
+    "unit": "#E53935",         # Red
+    "scatter": "#00ACC1",      # Cyan
+    "stock_qty": "#6D4C41",    # Brown
+    "high_value": "#FDD835",   # Gold
+    "wbs_count": "#3949AB",    # Indigo
+    "stock_status": "#00897B", # Teal
+    "ai_line": "#1565C0",
+    "ai_bar": "#2E7D32",
+    "ai_hist": "#EF6C00",
+    "ai_count": "#6A1B9A",
+}
+
 st.set_page_config(
     page_title="MBBS Inventory Dashboard",
     page_icon="📦",
@@ -463,6 +483,7 @@ with tab1:
             text="TOTAL_VALUE",
             custom_data=["TOTAL_STOCK", "MATERIAL_COUNT", "RECORD_COUNT"],
             title="Top WBS Elements by Inventory Value",
+            color_discrete_sequence=[CHART_COLORS["wbs"]],
         )
         fig_wbs.update_traces(
             texttemplate="%{text:,.2f}",
@@ -487,6 +508,7 @@ with tab1:
             text="TOTAL_VALUE",
             custom_data=["MATERIAL", "TOTAL_STOCK", "WBS_COUNT", "RECORD_COUNT"],
             title="Top Materials by Inventory Value",
+            color_discrete_sequence=[CHART_COLORS["material"]],
         )
         fig_mat.update_traces(
             texttemplate="%{text:,.2f}",
@@ -512,7 +534,8 @@ with tab1:
             y="TOTAL_VALUE",
             text="TOTAL_VALUE",
             custom_data=["TOTAL_STOCK", "MATERIAL_COUNT"],
-            title="Valuation Area Wise Inventory"
+            title="Valuation Area Wise Inventory",
+            color_discrete_sequence=[CHART_COLORS["valuation_area"]],
         )
         fig_area.update_traces(
             texttemplate="%{text:,.2f}",
@@ -537,7 +560,8 @@ with tab1:
             orientation="h",
             text="TOTAL_VALUE",
             custom_data=["TOTAL_STOCK", "RECORD_COUNT"],
-            title="Valuation Type Split by Value"
+            title="Valuation Type Split by Value",
+            color_discrete_sequence=[CHART_COLORS["valuation_type"]],
         )
         fig_vt.update_traces(
             texttemplate="%{text:,.2f}",
@@ -563,7 +587,8 @@ with tab1:
             y="TOTAL_VALUE",
             text="TOTAL_VALUE",
             custom_data=["TOTAL_STOCK", "RECORD_COUNT"],
-            title="Unit of Measure Wise Inventory Value"
+            title="Unit of Measure Wise Inventory Value",
+            color_discrete_sequence=[CHART_COLORS["unit"]],
         )
         fig_bun.update_traces(
             texttemplate="%{text:,.2f}",
@@ -589,7 +614,8 @@ with tab1:
             hover_name="MATERIAL_DISPLAY",
             custom_data=["MATERIAL_DISPLAY"],
             hover_data=["MATERIAL", "WBS_ELEMENT", "VAL_TYPE", "BUN"],
-            title="Material Stock vs Value Analysis"
+            title="Material Stock vs Value Analysis",
+            color_discrete_sequence=[CHART_COLORS["scatter"]],
         )
         fig_scatter.update_traces(
             hovertemplate="<b>%{customdata[0]}</b><br>Stock Qty: %{x:,.3f}<br>Inventory Value: INR %{y:,.2f}<extra></extra>"
@@ -623,7 +649,8 @@ with tab1:
             orientation="h",
             text="TOTAL_STOCK",
             custom_data=["MATERIAL", "TOTAL_VALUE", "WBS_COUNT"],
-            title="Top Materials by Stock Quantity"
+            title="Top Materials by Stock Quantity",
+            color_discrete_sequence=[CHART_COLORS["stock_qty"]],
         )
         fig_stock_qty.update_traces(
             texttemplate="%{text:,.3f}",
@@ -655,7 +682,8 @@ with tab1:
             orientation="h",
             text="TOTAL_VALUE",
             custom_data=["MATERIAL", "TOTAL_STOCK", "WBS_COUNT"],
-            title="Materials Above 1 Crore Inventory Value"
+            title="Materials Above 1 Crore Inventory Value",
+            color_discrete_sequence=[CHART_COLORS["high_value"]],
         )
         fig_high.update_traces(
             texttemplate="%{text:,.2f}",
@@ -688,7 +716,8 @@ with tab1:
             orientation="h",
             text="MATERIAL_COUNT",
             custom_data=["TOTAL_VALUE", "TOTAL_STOCK"],
-            title="Material Count by WBS Element"
+            title="Material Count by WBS Element",
+            color_discrete_sequence=[CHART_COLORS["wbs_count"]],
         )
         fig_wbs_count.update_traces(
             texttemplate="%{text:,.0f}",
@@ -723,7 +752,8 @@ with tab1:
             orientation="h",
             text="RECORD_COUNT",
             custom_data=["TOTAL_VALUE", "TOTAL_STOCK"],
-            title="Stock Status by Record Count"
+            title="Stock Status by Record Count",
+            color_discrete_sequence=[CHART_COLORS["stock_status"]],
         )
         fig_status.update_traces(
             texttemplate="%{text:,.0f}",
@@ -932,7 +962,7 @@ with tab3:
                 y_col = num_cols[0]
                 trend_df = chart_df[[x_col, y_col]].dropna().sort_values(x_col)
 
-                fig = px.line(trend_df, x=x_col, y=y_col, markers=True, text=y_col, title=f"{y_col} Trend by {x_col}")
+                fig = px.line(trend_df, x=x_col, y=y_col, markers=True, text=y_col, title=f"{y_col} Trend by {x_col}", color_discrete_sequence=[CHART_COLORS["ai_line"]])
                 fig.update_traces(texttemplate="%{text:,.2f}", textposition="top center")
                 fig.update_layout(height=600, margin=dict(l=10, r=80, t=60, b=50))
                 st.plotly_chart(fig, use_container_width=True)
@@ -943,7 +973,7 @@ with tab3:
                 value_col = num_cols[0]
 
                 bar_df = chart_df[[label_col, value_col]].dropna().sort_values(value_col, ascending=False).head(20)
-                fig = px.bar(bar_df, x=value_col, y=label_col, orientation="h", text=value_col, title=f"{value_col} by {label_col}")
+                fig = px.bar(bar_df, x=value_col, y=label_col, orientation="h", text=value_col, title=f"{value_col} by {label_col}", color_discrete_sequence=[CHART_COLORS["ai_bar"]])
                 fig.update_layout(height=720, yaxis={"automargin": True}, margin=dict(l=10, r=120, t=60, b=40))
                 fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", cliponaxis=False)
                 st.plotly_chart(fig, use_container_width=True)
@@ -955,7 +985,7 @@ with tab3:
 
             if len(num_cols) == 1:
                 value_col = num_cols[0]
-                fig = px.histogram(chart_df, x=value_col, title=f"Distribution of {value_col}")
+                fig = px.histogram(chart_df, x=value_col, title=f"Distribution of {value_col}", color_discrete_sequence=[CHART_COLORS["ai_hist"]])
                 fig.update_layout(height=550)
                 st.plotly_chart(fig, use_container_width=True)
                 return
@@ -964,7 +994,7 @@ with tab3:
                 label_col = text_cols[0]
                 count_df = chart_df[label_col].astype(str).value_counts().reset_index()
                 count_df.columns = [label_col, "Count"]
-                fig = px.bar(count_df.head(20), x="Count", y=label_col, orientation="h", text="Count", title=f"Count by {label_col}")
+                fig = px.bar(count_df.head(20), x="Count", y=label_col, orientation="h", text="Count", title=f"Count by {label_col}", color_discrete_sequence=[CHART_COLORS["ai_count"]])
                 fig.update_layout(height=650, yaxis={"automargin": True})
                 fig.update_traces(textposition="outside", cliponaxis=False)
                 st.plotly_chart(fig, use_container_width=True)
