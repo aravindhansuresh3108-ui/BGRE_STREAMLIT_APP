@@ -800,7 +800,12 @@ with tab1:
                 popup_df = filtered_df[filtered_df["TOTAL_STOCK"] == 0].copy()
 
     if popup_title and popup_df is not None:
+        # Show the drilldown popup for the current chart click.
         show_drilldown_popup(popup_title, popup_df)
+
+        # Clear only our custom active chart flag after showing once.
+        # Do not delete Plotly widget keys from session_state.
+        st.session_state.mbbs_active_chart = None
 
     st.divider()
     st.markdown('<div class="section-title">Material Level Detail Records</div>', unsafe_allow_html=True)
