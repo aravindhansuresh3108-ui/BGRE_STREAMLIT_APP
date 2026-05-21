@@ -612,20 +612,46 @@ with tab1:
             y="TOTAL_VALUE",
             size="TOTAL_VALUE",
             hover_name="MATERIAL_DISPLAY",
-            custom_data=["MATERIAL_DISPLAY"],
+            custom_data=["MATERIAL_DISPLAY", "MATERIAL", "WBS_ELEMENT", "VAL_TYPE", "BUN"],
             hover_data=["MATERIAL", "WBS_ELEMENT", "VAL_TYPE", "BUN"],
             title="Material Stock vs Value Analysis",
             color_discrete_sequence=[CHART_COLORS["scatter"]],
         )
         fig_scatter.update_traces(
-            hovertemplate="<b>%{customdata[0]}</b><br>Stock Qty: %{x:,.3f}<br>Inventory Value: INR %{y:,.2f}<extra></extra>"
+            hovertemplate="<b>%{customdata[0]}</b><br>Material: %{customdata[1]}<br>WBS Element: %{customdata[2]}<br>Valuation Type: %{customdata[3]}<br>Unit: %{customdata[4]}<br>Stock Qty: %{x:,.3f}<br>Inventory Value: INR %{y:,.2f}<extra></extra>"
         )
         fig_scatter.update_layout(xaxis_title="Stock Quantity", yaxis_title="Inventory Value")
         scatter_event = chart_event(clean_chart(fig_scatter, 520), "scatter_chart_popup")
         clicked_scatter = get_clicked_value(scatter_event, "customdata") if st.session_state.get("mbbs_active_chart") == "scatter_chart_popup" else None
         if clicked_scatter:
-            popup_title = f"Stock vs Value Drilldown: {clicked_scatter}"
-            popup_df = filtered_df[filtered_df["MATERIAL_DISPLAY"].astype(str) == str(clicked_scatter)].copy()
+            # Scatter chart returns multiple values in customdata.
+            # We extract each value and filter with the same fields used to plot the clicked point.
+            if isinstance(clicked_scatter, (list, tuple)):
+                clicked_display = str(clicked_scatter[0]) if len(clicked_scatter) > 0 else ""
+                clicked_material = str(clicked_scatter[1]) if len(clicked_scatter) > 1 else ""
+                clicked_wbs = str(clicked_scatter[2]) if len(clicked_scatter) > 2 else ""
+                clicked_val_type = str(clicked_scatter[3]) if len(clicked_scatter) > 3 else ""
+                clicked_bun = str(clicked_scatter[4]) if len(clicked_scatter) > 4 else ""
+
+                popup_title = f"Stock vs Value Drilldown: {clicked_display}"
+                popup_df = filtered_df[
+                    (filtered_df["MATERIAL_DISPLAY"].astype(str) == clicked_display) &
+                    (filtered_df["MATERIAL"].astype(str) == clicked_material) &
+                    (filtered_df["WBS_ELEMENT"].astype(str) == clicked_wbs) &
+                    (filtered_df["VAL_TYPE"].astype(str) == clicked_val_type) &
+                    (filtered_df["BUN"].astype(str) == clicked_bun)
+                ].copy()
+
+                # Fallback: if exact combination does not match, at least drill down by material display.
+                if popup_df.empty:
+                    popup_df = filtered_df[
+                        filtered_df["MATERIAL_DISPLAY"].astype(str) == clicked_display
+                    ].copy()
+            else:
+                popup_title = f"Stock vs Value Drilldown: {clicked_scatter}"
+                popup_df = filtered_df[
+                    filtered_df["MATERIAL_DISPLAY"].astype(str) == str(clicked_scatter)
+                ].copy()
 
     # Row 4 - More client-facing insights
     st.divider()
