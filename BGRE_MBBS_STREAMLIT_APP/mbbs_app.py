@@ -277,14 +277,13 @@ def mark_active_chart(chart_key):
     st.session_state.mbbs_active_chart = chart_key
 
 def chart_event(fig, key):
-    # Reliable Plotly selection for center popup drilldown.
-    # on_select="rerun" returns selected point and reruns app once.
+    # Mark the exact chart clicked. This prevents old selections from other charts
+    # from being reused for a new drilldown.
     return st.plotly_chart(
         fig,
         use_container_width=True,
         key=key,
-        on_select="rerun",
-        selection_mode="points",
+        on_select=lambda chart_key=key: mark_active_chart(chart_key),
         config=PLOTLY_CONFIG,
     )
 
@@ -502,7 +501,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_wbs.update_layout(yaxis={"automargin": True, "categoryorder": "total ascending"}, xaxis_title="Inventory Value", yaxis_title="WBS Element")
         wbs_event = chart_event(clean_chart(fig_wbs, 700), "wbs_chart_popup")
-        clicked_wbs = get_clicked_value(wbs_event, "y")
+        clicked_wbs = get_clicked_value(wbs_event, "y") if st.session_state.get("mbbs_active_chart") == "wbs_chart_popup" else None
         if clicked_wbs:
             popup_title = f"WBS Element Drilldown: {clicked_wbs}"
             popup_df = filtered_df[filtered_df["WBS_ELEMENT"].astype(str) == str(clicked_wbs)].copy()
@@ -527,7 +526,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_mat.update_layout(yaxis={"automargin": True, "categoryorder": "total ascending"}, xaxis_title="Inventory Value", yaxis_title="Material")
         mat_event = chart_event(clean_chart(fig_mat, 700), "material_chart_popup")
-        clicked_mat = get_clicked_value(mat_event, "y")
+        clicked_mat = get_clicked_value(mat_event, "y") if st.session_state.get("mbbs_active_chart") == "material_chart_popup" else None
         if clicked_mat:
             popup_title = f"Material Drilldown: {clicked_mat}"
             popup_df = filtered_df[filtered_df["MATERIAL_DISPLAY"].astype(str) == str(clicked_mat)].copy()
@@ -554,7 +553,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_area.update_layout(xaxis_tickangle=-45, xaxis_title="Valuation Area", yaxis_title="Inventory Value")
         area_event = chart_event(clean_chart(fig_area, 560), "area_chart_popup")
-        clicked_area = get_clicked_value(area_event, "x")
+        clicked_area = get_clicked_value(area_event, "x") if st.session_state.get("mbbs_active_chart") == "area_chart_popup" else None
         if clicked_area is not None:
             popup_title = f"Valuation Area Drilldown: {clicked_area}"
             popup_df = filtered_df[filtered_df["VAL_AREA"].astype(str) == str(clicked_area)].copy()
@@ -580,7 +579,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_vt.update_layout(yaxis={"automargin": True, "categoryorder": "total ascending"}, xaxis_title="Inventory Value", yaxis_title="Valuation Type")
         vt_event = chart_event(clean_chart(fig_vt, 560), "vt_chart_popup")
-        clicked_vt = get_clicked_value(vt_event, "y")
+        clicked_vt = get_clicked_value(vt_event, "y") if st.session_state.get("mbbs_active_chart") == "vt_chart_popup" else None
         if clicked_vt:
             popup_title = f"Valuation Type Drilldown: {clicked_vt}"
             popup_df = filtered_df[filtered_df["VAL_TYPE"].astype(str) == str(clicked_vt)].copy()
@@ -607,7 +606,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_bun.update_layout(xaxis_title="Unit", yaxis_title="Inventory Value")
         bun_event = chart_event(clean_chart(fig_bun, 520), "bun_chart_popup")
-        clicked_bun = get_clicked_value(bun_event, "x")
+        clicked_bun = get_clicked_value(bun_event, "x") if st.session_state.get("mbbs_active_chart") == "bun_chart_popup" else None
         if clicked_bun:
             popup_title = f"Unit Drilldown: {clicked_bun}"
             popup_df = filtered_df[filtered_df["BUN"].astype(str) == str(clicked_bun)].copy()
@@ -631,7 +630,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_scatter.update_layout(xaxis_title="Stock Quantity", yaxis_title="Inventory Value")
         scatter_event = chart_event(clean_chart(fig_scatter, 520), "scatter_chart_popup")
-        clicked_scatter = get_clicked_value(scatter_event, "customdata")
+        clicked_scatter = get_clicked_value(scatter_event, "customdata") if st.session_state.get("mbbs_active_chart") == "scatter_chart_popup" else None
         if clicked_scatter:
             # Scatter chart returns multiple values in customdata.
             # We extract each value and filter with the same fields used to plot the clicked point.
@@ -695,7 +694,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_stock_qty.update_layout(yaxis={"automargin": True, "categoryorder": "total ascending"}, xaxis_title="Stock Quantity", yaxis_title="Material")
         qty_event = chart_event(clean_chart(fig_stock_qty, 560), "stock_qty_chart_popup")
-        clicked_qty = get_clicked_value(qty_event, "y")
+        clicked_qty = get_clicked_value(qty_event, "y") if st.session_state.get("mbbs_active_chart") == "stock_qty_chart_popup" else None
         if clicked_qty:
             popup_title = f"Stock Quantity Material Drilldown: {clicked_qty}"
             popup_df = filtered_df[filtered_df["MATERIAL_DISPLAY"].astype(str) == str(clicked_qty)].copy()
@@ -728,7 +727,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_high.update_layout(yaxis={"automargin": True, "categoryorder": "total ascending"}, xaxis_title="Inventory Value", yaxis_title="Material")
         high_event = chart_event(clean_chart(fig_high, 560), "high_value_chart_popup")
-        clicked_high = get_clicked_value(high_event, "y")
+        clicked_high = get_clicked_value(high_event, "y") if st.session_state.get("mbbs_active_chart") == "high_value_chart_popup" else None
         if clicked_high:
             popup_title = f"High Value Material Drilldown: {clicked_high}"
             popup_df = filtered_df[filtered_df["MATERIAL_DISPLAY"].astype(str) == str(clicked_high)].copy()
@@ -762,7 +761,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_wbs_count.update_layout(yaxis={"automargin": True, "categoryorder": "total ascending"}, xaxis_title="Material Count", yaxis_title="WBS Element")
         wbs_count_event = chart_event(clean_chart(fig_wbs_count, 540), "wbs_count_chart_popup")
-        clicked_wbs_count = get_clicked_value(wbs_count_event, "y")
+        clicked_wbs_count = get_clicked_value(wbs_count_event, "y") if st.session_state.get("mbbs_active_chart") == "wbs_count_chart_popup" else None
         if clicked_wbs_count:
             popup_title = f"WBS Material Count Drilldown: {clicked_wbs_count}"
             popup_df = filtered_df[filtered_df["WBS_ELEMENT"].astype(str) == str(clicked_wbs_count)].copy()
@@ -798,7 +797,7 @@ if selected_tab == "📊 Dashboard":
         )
         fig_status.update_layout(yaxis={"automargin": True, "categoryorder": "total ascending"}, xaxis_title="Record Count", yaxis_title="Stock Status")
         status_event = chart_event(clean_chart(fig_status, 540), "stock_status_chart_popup")
-        clicked_status = get_clicked_value(status_event, "y")
+        clicked_status = get_clicked_value(status_event, "y") if st.session_state.get("mbbs_active_chart") == "stock_status_chart_popup" else None
         if clicked_status:
             popup_title = f"Stock Status Drilldown: {clicked_status}"
             if clicked_status == "Positive Stock":
