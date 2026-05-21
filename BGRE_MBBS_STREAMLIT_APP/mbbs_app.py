@@ -872,6 +872,17 @@ elif selected_tab == "🔍 Data Explorer":
 elif selected_tab == "🤖 AI Assistant":
     st.subheader("AI Assistant")
     st.caption("Connected to Snowflake Cortex Agent: BGRE_MBBS_MATERIAL_STOCK_AGENT")
+    st.markdown("""
+    <style>
+    div[data-testid="stChatInput"] {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        z-index: 999;
+        padding-top: 8px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     def run_agent(question):
         payload = json.dumps({
@@ -1038,7 +1049,7 @@ elif selected_tab == "🤖 AI Assistant":
         except Exception:
             st.info("Chart could not be generated for this result format, but the answer and data are available above.")
 
-    def render_agent_result(parsed):
+    def render_agent_result(parsed, key_suffix='current'):
         st.markdown("### Answer")
         st.markdown(parsed["text"])
 
@@ -1058,7 +1069,7 @@ elif selected_tab == "🤖 AI Assistant":
             if not parsed.get("chart_spec"):
                 make_ai_chart(parsed["table"])
             csv = parsed["table"].to_csv(index=False).encode("utf-8")
-            st.download_button("Download AI Result", csv, "MBBS_AI_RESULT.csv", "text/csv", use_container_width=True, key=f"ai_download_{len(st.session_state.mbbs_agent_messages)}")
+            st.download_button("Download AI Result", csv, "MBBS_AI_RESULT.csv", "text/csv", use_container_width=True, key=f"ai_download_{key_suffix}_{abs(hash(str(parsed.get('text', ''))))}")
 
         if parsed.get("suggestions"):
             st.markdown("### Suggested Follow-up Questions")
@@ -1070,10 +1081,10 @@ elif selected_tab == "🤖 AI Assistant":
     if "mbbs_agent_messages" not in st.session_state:
         st.session_state.mbbs_agent_messages = []
 
-    for msg in st.session_state.mbbs_agent_messages:
+    for idx, msg in enumerate(st.session_state.mbbs_agent_messages):
         with st.chat_message(msg["role"]):
             if msg["role"] == "assistant":
-                render_agent_result(msg["content"])
+                render_agent_result(msg["content"], key_suffix=f"history_{idx}")
             else:
                 st.markdown(msg["content"])
 
@@ -1111,7 +1122,7 @@ elif selected_tab == "🤖 AI Assistant":
                 try:
                     raw_response = run_agent(user_question)
                     parsed = parse_agent_response(raw_response)
-                    render_agent_result(parsed)
+                    render_agent_result(parsed, key_suffix=f"new_{len(st.session_state.mbbs_agent_messages)}")
                     st.session_state.mbbs_agent_messages.append({"role": "assistant", "content": parsed})
                 except Exception as e:
                     err = {
@@ -1121,5 +1132,5 @@ elif selected_tab == "🤖 AI Assistant":
                         "chart_spec": None,
                         "suggestions": []
                     }
-                    render_agent_result(err)
+                    render_agent_result(err, key_suffix=f"err_{len(st.session_state.mbbs_agent_messages)}")
                     st.session_state.mbbs_agent_messages.append({"role": "assistant", "content": err})
