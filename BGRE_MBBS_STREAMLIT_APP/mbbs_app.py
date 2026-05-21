@@ -1074,6 +1074,9 @@ with tab3:
         user_question = default_prompt
 
     if user_question:
+
+        st.session_state.pop("mbbs_active_chart", None)
+    
         st.session_state.mbbs_agent_messages.append({"role": "user", "content": user_question})
 
         with st.chat_message("user"):
