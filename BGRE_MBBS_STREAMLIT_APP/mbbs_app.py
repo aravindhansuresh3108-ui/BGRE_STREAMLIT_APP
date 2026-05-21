@@ -1075,7 +1075,22 @@ with tab3:
 
     if user_question:
 
-        st.session_state.pop("mbbs_active_chart", None)
+        # Clear old chart/drilldown selections before AI question execution.
+        # This prevents previously clicked drilldown popup from reopening during AI response.
+        for key in [
+            "mbbs_active_chart",
+            "wbs_chart_popup",
+            "material_chart_popup",
+            "area_chart_popup",
+            "vt_chart_popup",
+            "bun_chart_popup",
+            "scatter_chart_popup",
+            "stock_qty_chart_popup",
+            "high_value_chart_popup",
+            "wbs_count_chart_popup",
+            "stock_status_chart_popup",
+        ]:
+            st.session_state.pop(key, None)
     
         st.session_state.mbbs_agent_messages.append({"role": "user", "content": user_question})
 
