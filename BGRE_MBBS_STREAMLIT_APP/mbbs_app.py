@@ -281,8 +281,18 @@ def mark_active_chart(chart_key):
     st.session_state.mbbs_active_chart = chart_key
 
 def chart_event(fig, key):
-    # Callback records exactly which chart was clicked.
-    # This prevents old selections from other charts from reopening the previous drilldown.
+    # IMPORTANT:
+    # When AI mode is active, do NOT attach Plotly selection callback.
+    # Otherwise old chart selections can retrigger drilldown popup during AI reruns.
+    if is_ai_mode():
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"{key}_ai_safe",
+            config=PLOTLY_CONFIG,
+        )
+        return None
+
     return st.plotly_chart(
         fig,
         use_container_width=True,
