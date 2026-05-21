@@ -153,9 +153,6 @@ def load_data() -> pd.DataFrame:
 def clear_all_caches():
     st.cache_data.clear()
 
-def is_ai_mode():
-    return bool(st.session_state.get("mbbs_ai_mode", False))
-
 def money_fmt(v):
     try:
         return f"INR {float(v):,.2f}"
@@ -277,22 +274,11 @@ def clean_chart(fig, height=560):
     return fig
 
 def mark_active_chart(chart_key):
-    st.session_state["mbbs_ai_mode"] = False
     st.session_state.mbbs_active_chart = chart_key
 
 def chart_event(fig, key):
-    # IMPORTANT:
-    # When AI mode is active, do NOT attach Plotly selection callback.
-    # Otherwise old chart selections can retrigger drilldown popup during AI reruns.
-    if is_ai_mode():
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key=f"{key}_ai_safe",
-            config=PLOTLY_CONFIG,
-        )
-        return None
-
+    # Callback records exactly which chart was clicked.
+    # This prevents old selections from other charts from reopening the previous drilldown.
     return st.plotly_chart(
         fig,
         use_container_width=True,
@@ -355,9 +341,10 @@ with st.sidebar:
     ]
     for q in quick_questions:
         if st.button(q, key=f"quick_{q}", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = True
+            st.session_state["mbbs_selected_page"] = "🤖 AI Assistant"
             st.session_state["mbbs_active_chart"] = None
             st.session_state["mbbs_ai_prompt"] = q
+            st.rerun()
 
 # ------------------------------------------------------------
 # Header
@@ -366,17 +353,18 @@ st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
 st.title("MBBS Inventory Dashboard")
 st.caption("Material stock, WBS-wise inventory value, valuation area analysis and AI-powered Q&A.")
 
-tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Assistant"])
+selected_tab = st.radio(
+    "Navigation",
+    ["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Assistant"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="mbbs_selected_page"
+)
 
 # ------------------------------------------------------------
 # Dashboard
 # ------------------------------------------------------------
-with tab1:
-    # If user is working in AI tab, ignore any previously selected chart/drilldown.
-    # This prevents old drilldown popup from reopening during AI question reruns.
-    if is_ai_mode():
-        st.session_state["mbbs_active_chart"] = None
-
+if selected_tab == "📊 Dashboard":
     st.markdown('<div class="section-title">Executive Inventory Command Center</div>', unsafe_allow_html=True)
 
     with st.spinner("Loading MBBS data from Snowflake..."):
@@ -408,32 +396,25 @@ with tab1:
     popup_title = None
     popup_df = None
 
-    # Dashboard interactions should enable drilldown again.
-    # AI questions will set this back to True.
-
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         kpi("Total Materials", num_fmt(filtered_df["MATERIAL"].nunique()))
         if st.button("View details", key="kpi_total_materials", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "Total Materials Drilldown"
             popup_df = filtered_df.copy()
     with k2:
         kpi("WBS Elements", num_fmt(filtered_df["WBS_ELEMENT"].nunique()))
         if st.button("View details", key="kpi_wbs_elements", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "WBS Elements Drilldown"
             popup_df = filtered_df.copy()
     with k3:
         kpi("Inventory Value", money_fmt(filtered_df["TOTAL_VALUE"].sum()), is_amount=True)
         if st.button("View details", key="kpi_inventory_value", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "Inventory Value Drilldown"
             popup_df = filtered_df[filtered_df["TOTAL_VALUE"] > 0].copy()
     with k4:
         kpi("Stock Quantity", num_fmt(filtered_df["TOTAL_STOCK"].sum(), 3))
         if st.button("View details", key="kpi_stock_qty", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "Stock Quantity Drilldown"
             popup_df = filtered_df[filtered_df["TOTAL_STOCK"] != 0].copy()
 
@@ -441,25 +422,21 @@ with tab1:
     with k5:
         kpi("Records", num_fmt(len(filtered_df)))
         if st.button("View details", key="kpi_records", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "All Records Drilldown"
             popup_df = filtered_df.copy()
     with k6:
         kpi("Positive Stock Items", num_fmt((filtered_df["TOTAL_STOCK"] > 0).sum()))
         if st.button("View details", key="kpi_positive_stock", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "Positive Stock Items Drilldown"
             popup_df = filtered_df[filtered_df["TOTAL_STOCK"] > 0].copy()
     with k7:
         kpi("Negative Stock Items", num_fmt((filtered_df["TOTAL_STOCK"] < 0).sum()))
         if st.button("View details", key="kpi_negative_stock", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "Negative Stock Items Drilldown"
             popup_df = filtered_df[filtered_df["TOTAL_STOCK"] < 0].copy()
     with k8:
         kpi("High Value Items", num_fmt((filtered_df["TOTAL_VALUE"] >= 10000000).sum()))
         if st.button("View details", key="kpi_high_value", use_container_width=True):
-            st.session_state["mbbs_ai_mode"] = False
             popup_title = "High Value Items Drilldown"
             popup_df = filtered_df[filtered_df["TOTAL_VALUE"] >= 10000000].copy()
 
@@ -831,7 +808,7 @@ with tab1:
             else:
                 popup_df = filtered_df[filtered_df["TOTAL_STOCK"] == 0].copy()
 
-    if popup_title and popup_df is not None and not is_ai_mode():
+    if popup_title and popup_df is not None:
         show_drilldown_popup(popup_title, popup_df)
 
     st.divider()
@@ -845,7 +822,7 @@ with tab1:
 # ------------------------------------------------------------
 # Data Explorer
 # ------------------------------------------------------------
-with tab2:
+elif selected_tab == "🔍 Data Explorer":
     st.subheader("Filter & Explore MBBS Stock Data")
     df = clean_df(load_data())
 
@@ -892,7 +869,7 @@ with tab2:
 # ------------------------------------------------------------
 # AI Assistant
 # ------------------------------------------------------------
-with tab3:
+elif selected_tab == "🤖 AI Assistant":
     st.subheader("AI Assistant")
     st.caption("Connected to Snowflake Cortex Agent: BGRE_MBBS_MATERIAL_STOCK_AGENT")
 
