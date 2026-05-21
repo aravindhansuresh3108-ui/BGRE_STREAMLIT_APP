@@ -800,28 +800,7 @@ with tab1:
                 popup_df = filtered_df[filtered_df["TOTAL_STOCK"] == 0].copy()
 
     if popup_title and popup_df is not None:
-
-    # Show popup only once
-    show_drilldown_popup(popup_title, popup_df)
-
-    # Immediately clear popup/chart session after showing.
-    # This prevents old popup reopening during AI reruns.
-    popup_keys = [
-        "mbbs_active_chart",
-        "wbs_chart_popup",
-        "material_chart_popup",
-        "area_chart_popup",
-        "vt_chart_popup",
-        "bun_chart_popup",
-        "scatter_chart_popup",
-        "stock_qty_chart_popup",
-        "high_value_chart_popup",
-        "wbs_count_chart_popup",
-        "stock_status_chart_popup",
-    ]
-
-    for key in popup_keys:
-        st.session_state.pop(key, None)
+        show_drilldown_popup(popup_title, popup_df)
 
     st.divider()
     st.markdown('<div class="section-title">Material Level Detail Records</div>', unsafe_allow_html=True)
