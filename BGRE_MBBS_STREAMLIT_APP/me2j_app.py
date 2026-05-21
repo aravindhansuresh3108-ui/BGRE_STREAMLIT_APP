@@ -36,6 +36,27 @@ PLOTLY_CONFIG = {
     "responsive": True,
 }
 
+# ------------------------------------------------------------
+# Chart colors - visual enhancement only
+# ------------------------------------------------------------
+CHART_COLORS = {
+    "vendor": "#1E88E5",          # Blue
+    "material": "#43A047",        # Green
+    "plant": "#FB8C00",           # Orange
+    "doc_type": "#8E24AA",        # Purple
+    "delivery": "#E53935",        # Red
+    "trend": "#00ACC1",           # Cyan
+    "pending_vendor": "#6D4C41",  # Brown
+    "pending_material": "#FDD835",# Gold
+    "company": "#3949AB",         # Indigo
+    "matl_group": "#00897B",      # Teal
+    "vendor_count": "#D81B60",    # Pink
+    "qty_compare": ["#1E88E5", "#43A047"],
+    "ai_bar": "#5E35B1",
+    "ai_line": "#00897B",
+    "ai_hist": "#FB8C00",
+}
+
 @st.cache_data(ttl=300)
 def load_data():
     return pd.read_sql("SELECT * FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT", conn)
@@ -485,6 +506,7 @@ with tab1:
             orientation="h",
             text="Total_PO_Value",
             custom_data=["PO_Count", "Total_Qty", "Pending_Qty"],
+            color_discrete_sequence=[CHART_COLORS["vendor"]],
         )
         fig_vendor.update_traces(
             texttemplate="%{text:,.2f}",
@@ -507,6 +529,7 @@ with tab1:
             orientation="h",
             text="Total_PO_Value",
             custom_data=["PO_Count", "Total_Qty", "Pending_Qty", "Pending_Invoice"],
+            color_discrete_sequence=[CHART_COLORS["material"]],
         )
         fig_material.update_traces(
             texttemplate="%{text:,.2f}",
@@ -536,6 +559,7 @@ with tab1:
             y="Total_Value",
             text="Total_Value",
             custom_data=["Total_Qty", "PO_Count"],
+            color_discrete_sequence=[CHART_COLORS["plant"]],
         )
         fig_plant.update_traces(
             texttemplate="%{text:,.2f}",
@@ -570,6 +594,7 @@ with tab1:
             orientation="h",
             text="PO_Count",
             custom_data=["Total_PO_Value", "Pending_Qty"],
+            color_discrete_sequence=[CHART_COLORS["doc_type"]],
         )
         fig_doc.update_traces(
             texttemplate="%{text:,.0f}",
@@ -602,7 +627,14 @@ with tab1:
                 filtered_df["Still to be inv."].clip(lower=0).sum(),
             ],
         })
-        fig_delivery = px.bar(delivery_chart, x="Status", y="Quantity", text="Quantity")
+        fig_delivery = px.bar(
+            delivery_chart,
+            x="Status",
+            y="Quantity",
+            text="Quantity",
+            color="Status",
+            color_discrete_sequence=[CHART_COLORS["delivery"], CHART_COLORS["plant"], CHART_COLORS["doc_type"]],
+        )
         fig_delivery.update_traces(
             texttemplate="%{text:,.2f}",
             textposition="outside",
@@ -631,7 +663,15 @@ with tab1:
             .reset_index()
         )
         trend_df["Month"] = trend_df["Item Doc Date"].astype(str)
-        fig_trend = px.line(trend_df, x="Month", y="PO_Value", markers=True, text="PO_Value", custom_data=["PO_Count"])
+        fig_trend = px.line(
+            trend_df,
+            x="Month",
+            y="PO_Value",
+            markers=True,
+            text="PO_Value",
+            custom_data=["PO_Count"],
+            color_discrete_sequence=[CHART_COLORS["trend"]],
+        )
         fig_trend.update_traces(
             texttemplate="%{text:,.2f}",
             textposition="top center",
@@ -659,7 +699,15 @@ with tab1:
             .reset_index()
         )
         pending_vendor = pending_vendor[pending_vendor["Pending_Delivery"] > 0].sort_values("Pending_Delivery", ascending=False).head(15)
-        fig = px.bar(pending_vendor, x="Pending_Delivery", y="Vendor Name", orientation="h", text="Pending_Delivery", custom_data=["PO_Value", "PO_Count"])
+        fig = px.bar(
+            pending_vendor,
+            x="Pending_Delivery",
+            y="Vendor Name",
+            orientation="h",
+            text="Pending_Delivery",
+            custom_data=["PO_Value", "PO_Count"],
+            color_discrete_sequence=[CHART_COLORS["pending_vendor"]],
+        )
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>Pending Delivery: %{x:,.2f}<br>PO Value: INR %{customdata[0]:,.2f}<br>PO Count: %{customdata[1]:,.0f}<extra></extra>")
         fig.update_layout(yaxis={"automargin": True}, xaxis_title="Pending Delivery", yaxis_title="Vendor Name")
         event = chart_event(clean_chart(fig, 560), "pending_vendor_click")
@@ -676,7 +724,15 @@ with tab1:
             .reset_index()
         )
         pending_material = pending_material[pending_material["Pending_Invoice"] > 0].sort_values("Pending_Invoice", ascending=False).head(15)
-        fig = px.bar(pending_material, x="Pending_Invoice", y="Short Text", orientation="h", text="Pending_Invoice", custom_data=["PO_Value", "PO_Count"])
+        fig = px.bar(
+            pending_material,
+            x="Pending_Invoice",
+            y="Short Text",
+            orientation="h",
+            text="Pending_Invoice",
+            custom_data=["PO_Value", "PO_Count"],
+            color_discrete_sequence=[CHART_COLORS["pending_material"]],
+        )
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>Pending Invoice: %{x:,.2f}<br>PO Value: INR %{customdata[0]:,.2f}<br>PO Count: %{customdata[1]:,.0f}<extra></extra>")
         fig.update_layout(yaxis={"automargin": True}, xaxis_title="Pending Invoice", yaxis_title="Material / Short Text")
         event = chart_event(clean_chart(fig, 560), "pending_material_click")
@@ -696,7 +752,15 @@ with tab1:
             .sort_values("Total_PO_Value", ascending=False)
             .head(15)
         )
-        fig = px.bar(company_chart, x="Total_PO_Value", y="Company Name", orientation="h", text="Total_PO_Value", custom_data=["PO_Count"])
+        fig = px.bar(
+            company_chart,
+            x="Total_PO_Value",
+            y="Company Name",
+            orientation="h",
+            text="Total_PO_Value",
+            custom_data=["PO_Count"],
+            color_discrete_sequence=[CHART_COLORS["company"]],
+        )
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>PO Value: INR %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<extra></extra>")
         fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Value", yaxis_title="Company Name")
         event = chart_event(clean_chart(fig, 540), "company_chart_click")
@@ -714,7 +778,15 @@ with tab1:
             .sort_values("Total_Spend", ascending=False)
             .head(15)
         )
-        fig = px.bar(group_chart, x="Total_Spend", y="Matl Group", orientation="h", text="Total_Spend", custom_data=["PO_Count"])
+        fig = px.bar(
+            group_chart,
+            x="Total_Spend",
+            y="Matl Group",
+            orientation="h",
+            text="Total_Spend",
+            custom_data=["PO_Count"],
+            color_discrete_sequence=[CHART_COLORS["matl_group"]],
+        )
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>Total Spend: INR %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<extra></extra>")
         fig.update_layout(yaxis={"automargin": True}, xaxis_title="Spend", yaxis_title="Material Group")
         event = chart_event(clean_chart(fig, 540), "matl_group_chart_click")
@@ -733,7 +805,14 @@ with tab1:
             .reset_index()
             .sort_values("Vendor_Count", ascending=False)
         )
-        fig = px.bar(vendor_count_chart, x="Plant", y="Vendor_Count", text="Vendor_Count", custom_data=["PO_Value"])
+        fig = px.bar(
+            vendor_count_chart,
+            x="Plant",
+            y="Vendor_Count",
+            text="Vendor_Count",
+            custom_data=["PO_Value"],
+            color_discrete_sequence=[CHART_COLORS["vendor_count"]],
+        )
         fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside", hovertemplate="<b>Plant %{x}</b><br>Vendor Count: %{y:,.0f}<br>PO Value: INR %{customdata[0]:,.2f}<extra></extra>")
         fig.update_layout(xaxis_tickangle=-45, xaxis_title="Plant", yaxis_title="Vendor Count")
         event = chart_event(clean_chart(fig, 500), "vendor_count_plant_click")
@@ -751,7 +830,13 @@ with tab1:
             .sort_values("PO_Quantity", ascending=False)
             .head(15)
         )
-        fig = px.bar(qty_chart, x="Plant", y=["PO_Quantity", "GR_Quantity"], barmode="group")
+        fig = px.bar(
+            qty_chart,
+            x="Plant",
+            y=["PO_Quantity", "GR_Quantity"],
+            barmode="group",
+            color_discrete_sequence=CHART_COLORS["qty_compare"],
+        )
         fig.update_traces(hovertemplate="<b>Plant %{x}</b><br>%{fullData.name}: %{y:,.2f}<extra></extra>")
         fig.update_layout(height=500, dragmode=False, hovermode="closest", clickmode="event", xaxis_tickangle=-45, xaxis_title="Plant", yaxis_title="Quantity", margin=dict(l=10, r=60, t=25, b=80))
         event = chart_event(fig, "qty_compare_click")
@@ -951,7 +1036,8 @@ with tab3:
                     y=y_col,
                     markers=True,
                     text=y_col,
-                    title=f"{y_col} Trend by {x_col}"
+                    title=f"{y_col} Trend by {x_col}",
+                    color_discrete_sequence=[CHART_COLORS["ai_line"]],
                 )
                 fig.update_traces(texttemplate="%{text:,.2f}", textposition="top center")
                 fig.update_layout(height=600)
@@ -975,7 +1061,8 @@ with tab3:
                     y=label_col,
                     orientation="h",
                     text=value_col,
-                    title=f"{value_col} by {label_col}"
+                    title=f"{value_col} by {label_col}",
+                    color_discrete_sequence=[CHART_COLORS["ai_bar"]],
                 )
                 fig.update_layout(
                     height=700,
@@ -995,7 +1082,8 @@ with tab3:
                 fig = px.histogram(
                     chart_df,
                     x=value_col,
-                    title=f"Distribution of {value_col}"
+                    title=f"Distribution of {value_col}",
+                    color_discrete_sequence=[CHART_COLORS["ai_hist"]],
                 )
                 fig.update_layout(height=550)
                 st.plotly_chart(fig, use_container_width=True)
@@ -1017,7 +1105,8 @@ with tab3:
                     y=label_col,
                     orientation="h",
                     text="Count",
-                    title=f"Count by {label_col}"
+                    title=f"Count by {label_col}",
+                    color_discrete_sequence=[CHART_COLORS["ai_bar"]],
                 )
                 fig.update_layout(height=650, yaxis={"automargin": True})
                 fig.update_traces(textposition="outside")
