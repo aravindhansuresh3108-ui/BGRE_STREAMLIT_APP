@@ -462,9 +462,6 @@ with tab1:
 
     st.caption(f"Filtered Records: {len(filtered_df):,}")
 
-    if popup_title and popup_df is not None:
-        show_popup(popup_title, popup_df)
-
     st.divider()
 
     # Pre-aggregations
