@@ -932,6 +932,7 @@ with tab1:
 
     if popup_title and popup_df is not None:
         show_popup(popup_title, popup_df)
+        st.session_state.me2j_active_chart = None
 
     st.divider()
     st.markdown('<div class="section-title">Detailed Data Preview</div>', unsafe_allow_html=True)
@@ -1244,9 +1245,16 @@ with tab3:
             else:
                 st.markdown(msg["content"])
 
-    user_question = st.chat_input("Ask about ME2J procurement data...")
+    def clear_me2j_chart_state():
+        st.session_state.me2j_active_chart = None
+
+    user_question = st.chat_input(
+        "Ask about ME2J procurement data...",
+        on_submit=clear_me2j_chart_state
+    )
 
     if user_question:
+        st.session_state.me2j_active_chart = None
         st.session_state.me2j_agent_messages.append({
             "role": "user",
             "content": user_question
