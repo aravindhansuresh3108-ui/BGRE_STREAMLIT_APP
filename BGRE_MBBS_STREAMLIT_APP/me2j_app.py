@@ -604,6 +604,7 @@ with tab1:
 
     popup_title = None
     popup_df = None
+    summary_popup_clicked = False
 
     # Executive Summary: 3-column layout keeps UOM/currency values readable.
     if has_division_filter:
@@ -624,6 +625,7 @@ with tab1:
     with row1_col1:
         kpi("Total POs", total_po_value)
         if st.button("View details", key="kpi_total_pos", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "Total POs Drilldown"
             popup_df = filtered_df.copy()
 
@@ -631,6 +633,7 @@ with tab1:
         vendor_count_col = "Vendor/Supplying plant" if "Vendor/Supplying plant" in filtered_df.columns else ("Vendor Name" if has_vendor_name else None)
         kpi("Total Vendors", num_fmt(filtered_df[vendor_count_col].nunique() if vendor_count_col else 0))
         if st.button("View details", key="kpi_total_vendors", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "Total Vendors Drilldown"
             popup_df = filtered_df.copy()
 
@@ -642,6 +645,7 @@ with tab1:
         )
         kpi("PO Quantity by UOM", po_uom_text)
         if st.button("View details", key="kpi_po_qty_uom", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "PO Quantity by UOM Drilldown"
             popup_df = (
                 filtered_df[filtered_df[po_qty_col] > 0].copy() if po_qty_col in filtered_df.columns else filtered_df.iloc[0:0]
@@ -657,6 +661,7 @@ with tab1:
             is_amount=True,
         )
         if st.button("View details", key="kpi_po_value_currency", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "PO Value by Currency Drilldown"
             popup_df = (
                 filtered_df[filtered_df[po_value_col] > 0].copy() if po_value_col in filtered_df.columns else filtered_df.iloc[0:0]
@@ -670,6 +675,7 @@ with tab1:
         )
         kpi("GR Quantity by UOM", gr_uom_text)
         if st.button("View details", key="kpi_gr_uom", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "GR Quantity by UOM Drilldown"
             popup_df = filtered_df[filtered_df["GR Qty"] > 0].copy() if "GR Qty" in filtered_df.columns else filtered_df.iloc[0:0]
 
@@ -681,6 +687,7 @@ with tab1:
         )
         kpi("Pending Delivery Quantity by UOM", pend_uom_text)
         if st.button("View details", key="kpi_pending_uom", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "Pending Delivery Quantity by UOM Drilldown"
             popup_df = (
                 filtered_df[filtered_df["Still to be del."] > 0].copy()
@@ -692,6 +699,7 @@ with tab1:
     with row3_col1:
         kpi("No. of Projects", num_fmt(project_count))
         if st.button("View details", key="kpi_projects", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "Projects Drilldown"
             popup_df = (
                 filtered_df[filtered_df[project_col].astype(str).str.strip() != ""]
@@ -704,6 +712,7 @@ with tab1:
     with row3_col2:
         kpi("Material Groups", num_fmt(matl_group_count))
         if st.button("View details", key="kpi_matl_groups", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "Material Groups Drilldown"
             popup_df = (
                 filtered_df[filtered_df["Matl Group"].astype(str).str.strip() != ""].copy() if has_matl_group else filtered_df.iloc[0:0]
@@ -714,6 +723,7 @@ with tab1:
         not_released_count = release_summary.loc[release_summary["Release Bucket"] == "Not Released", "PO Count"].sum()
         kpi("Release Status", f"Released: {num_fmt(released_count)}<br>Not Released: {num_fmt(not_released_count)}")
         if st.button("View details", key="kpi_release_status", use_container_width=True):
+            summary_popup_clicked = True
             popup_title = "Release Status Drilldown"
             popup_df = release_df.copy()
 
@@ -757,7 +767,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
         fig.update_layout(xaxis_tickangle=-35, xaxis_title="Plant", yaxis_title="PO Count")
         event = chart_event(clean_chart(fig, 560), "po_count_plant_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "po_count_plant_click" else None
+        selected = get_clicked_value(event, "x") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "po_count_plant_click") else None
         if selected and has_plant:
             popup_title = f"PO Count by Plant Drilldown: {selected}"
             popup_df = filtered_df[filtered_df["Plant"].astype(str) == str(selected)]
@@ -783,7 +793,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>PO Value: %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<extra></extra>")
         fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Value", yaxis_title="Vendor Name")
         event = chart_event(clean_chart(fig, 560), "vendor_summary_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "vendor_summary_click" else None
+        selected = get_clicked_value(event, "y") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "vendor_summary_click") else None
         if selected and has_vendor_name:
             popup_title = f"Vendor Summary Drilldown: {selected}"
             popup_df = filtered_df[filtered_df["Vendor Name"].astype(str) == str(selected)]
@@ -801,7 +811,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside")
         fig.update_layout(xaxis_title="Order Unit / UOM", yaxis_title="PO Quantity")
         event = chart_event(clean_chart(fig, 520), "qty_uom_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "qty_uom_click" else None
+        selected = get_clicked_value(event, "x") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "qty_uom_click") else None
         if selected:
             popup_title = f"Quantity by UOM Drilldown: {selected}"
             popup_df = filtered_df[filtered_df[uom_col].astype(str) == str(selected)]
@@ -819,7 +829,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside")
         fig.update_layout(xaxis_title="Currency", yaxis_title="PO Value")
         event = chart_event(clean_chart(fig, 520), "value_currency_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "value_currency_click" else None
+        selected = get_clicked_value(event, "x") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "value_currency_click") else None
         if selected:
             popup_title = f"Value by Currency Drilldown: {selected}"
             popup_df = filtered_df[filtered_df[currency_col].astype(str) == str(selected)]
@@ -837,7 +847,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside")
         fig.update_layout(xaxis_title="Order Unit / UOM", yaxis_title="GR Quantity")
         event = chart_event(clean_chart(fig, 520), "gr_uom_chart_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "gr_uom_chart_click" else None
+        selected = get_clicked_value(event, "x") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "gr_uom_chart_click") else None
         if selected and uom_col in filtered_df.columns:
             popup_title = f"GR Quantity by UOM Drilldown: {selected}"
             popup_df = filtered_df[(filtered_df[uom_col].astype(str) == str(selected)) & (filtered_df["GR Qty"] > 0)]
@@ -859,7 +869,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
         fig.update_layout(xaxis_title="Release Status", yaxis_title="PO Count")
         event = chart_event(clean_chart(fig, 520), "release_status_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "release_status_click" else None
+        selected = get_clicked_value(event, "x") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "release_status_click") else None
         if selected:
             popup_title = f"Release Status Drilldown: {selected}"
             popup_df = release_df[release_df["Release Bucket"].astype(str) == str(selected)]
@@ -890,7 +900,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
         fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Count", yaxis_title="Project")
         event = chart_event(clean_chart(fig, 560), "project_summary_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "project_summary_click" else None
+        selected = get_clicked_value(event, "y") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "project_summary_click") else None
         if selected and has_project:
             popup_title = f"Project Drilldown: {selected}"
             popup_df = filtered_df[filtered_df[project_col].astype(str) == str(selected)]
@@ -915,7 +925,7 @@ with tab1:
         fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
         fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Count", yaxis_title="Material Group")
         event = chart_event(clean_chart(fig, 560), "matl_summary_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "matl_summary_click" else None
+        selected = get_clicked_value(event, "y") if (not summary_popup_clicked and st.session_state.get("me2j_active_chart") == "matl_summary_click") else None
         if selected and has_matl_group:
             popup_title = f"Material Group Drilldown: {selected}"
             popup_df = filtered_df[filtered_df["Matl Group"].astype(str) == str(selected)]
