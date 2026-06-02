@@ -693,12 +693,13 @@ with tab1:
         kpi("No. of Projects", num_fmt(project_count))
         if st.button("View details", key="kpi_projects", use_container_width=True):
             
-            popup_df = (
-    filtered_df[filtered_df[project_col].astype(str).str.strip() != ""]
-    .drop_duplicates(subset=[project_col])
-    .sort_values(project_col)
-    .copy()
-)
+                        popup_df = (
+                filtered_df[filtered_df[project_col].astype(str).str.strip() != ""]
+                .drop_duplicates(subset=[project_col])
+                .sort_values(project_col)
+                .copy()
+                if has_project else filtered_df.iloc[0:0]
+            )
 
     with row3_col2:
         kpi("Material Groups", num_fmt(matl_group_count))
