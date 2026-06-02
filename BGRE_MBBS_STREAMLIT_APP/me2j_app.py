@@ -681,7 +681,7 @@ with tab1:
         )
         kpi("Pending Delivery Quantity by UOM", pend_uom_text)
         if st.button("View details", key="kpi_pending_uom", use_container_width=True):
-            popopup_title = "Projects Drilldown"pup_title = "Pending Delivery Quantity by UOM Drilldown"
+            popup_title = "Pending Delivery Quantity by UOM Drilldown"
             popup_df = (
                 filtered_df[filtered_df["Still to be del."] > 0].copy()
                 if "Still to be del." in filtered_df.columns
