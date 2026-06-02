@@ -77,6 +77,30 @@ def num_fmt(v):
     except Exception:
         return "0"
 
+def format_inr_compact(v):
+    """Format INR in Cr/Lakh where suitable (UI only, not affecting calculations)."""
+    try:
+        v = float(v) if v is not None else 0.0
+    except Exception:
+        v = 0.0
+    if v >= 1e7:
+        return f"INR {v / 1e7:,.2f} Cr"
+    if v >= 1e5:
+        return f"INR {v / 1e5:,.2f} Lakh"
+    return f"INR {v:,.2f}"
+
+def format_usd_compact(v):
+    """Format USD in Cr/Lakh where suitable (UI only, not affecting calculations)."""
+    try:
+        v = float(v) if v is not None else 0.0
+    except Exception:
+        v = 0.0
+    if v >= 1e7:
+        return f"USD {v / 1e7:,.2f} Cr"
+    if v >= 1e5:
+        return f"USD {v / 1e5:,.2f} Lakh"
+    return f"USD {v:,.2f}"
+
 def clean_numeric(df, cols):
     for c in cols:
         if c in df.columns:
@@ -140,6 +164,7 @@ def detail_table(df, rows=20):
         "Item",
         "PO Date",
         "Material Code",
+        "Project",
         "Vendor/Supplying plant",
         "Vendor Name",
         "Short Text",
@@ -174,6 +199,10 @@ def detail_table(df, rows=20):
         if mcol in table_df.columns:
             table_df[mcol] = table_df[mcol].fillna("-").astype(str).str.strip()
             table_df.loc[table_df[mcol].isin(["", "None", "nan", "NaN"]), mcol] = "-"
+    for pcol in ["Project"]:
+        if pcol in table_df.columns:
+            table_df[pcol] = table_df[pcol].fillna("-").astype(str).str.strip()
+            table_df.loc[table_df[pcol].isin(["", "None", "nan", "NaN"]), pcol] = "-"
     st.dataframe(table_df.head(rows), use_container_width=True, hide_index=True, height=420)
 
 def clean_chart(fig, height=520):
@@ -223,6 +252,94 @@ def pie_chart_event(fig, key):
 def show_popup(title, df):
     st.markdown(f"### {title}")
     mini_summary(df, title)
+    if title == "Total POs Drilldown":
+        # Division-wise / Purchase Organization-wise breakdown for distinct PO counts.
+        div_col = "Division" if "Division" in df.columns else None
+        po_org_col = "POrg" if "POrg" in df.columns else None
+        if div_col or po_org_col:
+            if div_col and po_org_col and div_col != po_org_col:
+                colA, colB = st.columns(2)
+                with colA:
+                    breakdown_div = (
+                        df.groupby(div_col, dropna=True)["PurchDoc"]
+                        .nunique()
+                        .reset_index(name="PO Count")
+                        .sort_values("PO Count", ascending=False)
+                    )
+                    st.markdown("#### PO Count Breakdown (Division)")
+                    st.dataframe(breakdown_div.head(25), use_container_width=True, hide_index=True)
+                with colB:
+                    breakdown_porg = (
+                        df.groupby(po_org_col, dropna=True)["PurchDoc"]
+                        .nunique()
+                        .reset_index(name="PO Count")
+                        .sort_values("PO Count", ascending=False)
+                    )
+                    st.markdown("#### PO Count Breakdown (Purchase Organization)")
+                    st.dataframe(breakdown_porg.head(25), use_container_width=True, hide_index=True)
+            elif div_col:
+                breakdown = (
+                    df.groupby(div_col, dropna=True)["PurchDoc"]
+                    .nunique()
+                    .reset_index(name="PO Count")
+                    .sort_values("PO Count", ascending=False)
+                )
+                st.markdown("#### PO Count Breakdown (Division)")
+                st.dataframe(breakdown.head(25), use_container_width=True, hide_index=True)
+            elif po_org_col:
+                breakdown = (
+                    df.groupby(po_org_col, dropna=True)["PurchDoc"]
+                    .nunique()
+                    .reset_index(name="PO Count")
+                    .sort_values("PO Count", ascending=False)
+                )
+                st.markdown("#### PO Count Breakdown (Purchase Organization)")
+                st.dataframe(breakdown.head(25), use_container_width=True, hide_index=True)
+    if title == "PO Quantity by UOM Drilldown" and "Order Unit" in df.columns:
+        qty_col = "PO Quantity" if "PO Quantity" in df.columns else ("PO Quantity Sto" if "PO Quantity Sto" in df.columns else None)
+        if qty_col:
+            summary = (
+                df.groupby("Order Unit", dropna=True)[qty_col]
+                .sum()
+                .reset_index(name="PO Quantity")
+                .sort_values("PO Quantity", ascending=False)
+            )
+            st.markdown("#### All UOM Summary")
+            st.dataframe(summary, use_container_width=True, hide_index=True)
+
+    if title == "GR Quantity by UOM Drilldown" and "Order Unit" in df.columns and "GR Qty" in df.columns:
+        summary = (
+            df.groupby("Order Unit", dropna=True)["GR Qty"]
+            .sum()
+            .reset_index(name="GR Quantity")
+            .sort_values("GR Quantity", ascending=False)
+        )
+        st.markdown("#### All UOM Summary")
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+
+    if title == "Pending Delivery Quantity by UOM Drilldown" and "Order Unit" in df.columns and "Still to be del." in df.columns:
+        summary = (
+            df.groupby("Order Unit", dropna=True)["Still to be del."]
+            .sum()
+            .clip(lower=0)
+            .reset_index(name="Pending Delivery Quantity")
+            .sort_values("Pending Delivery Quantity", ascending=False)
+        )
+        st.markdown("#### All UOM Summary")
+        st.dataframe(summary, use_container_width=True, hide_index=True)
+
+    if title == "PO Value by Currency Drilldown" and "Crcy" in df.columns:
+        value_col = "PO Value" if "PO Value" in df.columns else ("POH" if "POH" in df.columns else None)
+        if value_col:
+            summary = (
+                df.groupby("Crcy", dropna=True)[value_col]
+                .sum()
+                .reset_index(name="PO Value")
+                .sort_values("PO Value", ascending=False)
+            )
+            st.markdown("#### Currency Summary")
+            st.dataframe(summary, use_container_width=True, hide_index=True)
+
     st.markdown("#### Detailed Records")
     detail_table(df, rows=50)
     csv = df.to_csv(index=False).encode("utf-8")
@@ -345,7 +462,8 @@ with tab1:
     uom_col = "Order Unit" if "Order Unit" in df_all.columns else "UOM"
     currency_col = "Crcy" if "Crcy" in df_all.columns else "Currency"
     po_date_col = "PO Date" if "PO Date" in df_all.columns else "Item Doc Date"
-    project_col = "Vald Element" if "Vald Element" in df_all.columns else "WBS Element"
+    # Project KPI/count must be based on the "Project" column only (no WBS/Vald Element fallbacks).
+    project_col = "Project" if "Project" in df_all.columns else None
 
     if "Del Date" in df_all.columns:
         df_all["Del Date"] = pd.to_datetime(df_all["Del Date"], errors="coerce", dayfirst=True)
@@ -360,12 +478,53 @@ with tab1:
     has_matl_group = "Matl Group" in df_all.columns
     has_del_date = "Del Date" in df_all.columns
     has_release_status = "Release Status" in df_all.columns
-    has_project = project_col in df_all.columns
+    has_project = project_col is not None
+
+    division_filter_col = "Division" if "Division" in df_all.columns else ("POrg" if "POrg" in df_all.columns else None)
+    has_division_filter = division_filter_col is not None
+
+    material_filter_col = "Material" if "Material" in df_all.columns else ("Material Code" if "Material Code" in df_all.columns else None)
+    has_material_filter = material_filter_col is not None
+
+    has_po_date_filter = po_date_col in df_all.columns
 
     vendor_list = ["All"] + sorted(df_all["Vendor Name"].dropna().astype(str).unique().tolist()) if has_vendor_name else ["All"]
     plant_list = ["All"] + sorted(df_all["Plant"].dropna().astype(str).unique().tolist()) if has_plant else ["All"]
     doc_type_list = ["All"] + sorted(df_all["Doc Type"].dropna().astype(str).unique().tolist()) if has_doc_type else ["All"]
     matl_group_list = ["All"] + sorted(df_all["Matl Group"].dropna().astype(str).unique().tolist()) if has_matl_group else ["All"]
+
+    if has_division_filter:
+        division_list = ["All"] + sorted(df_all[division_filter_col].dropna().astype(str).unique().tolist())
+        selected_division = st.sidebar.selectbox("Division / Purchase Organization", division_list, key="dash_div_porg")
+    else:
+        selected_division = "All"
+
+    if has_po_date_filter:
+        po_min = df_all[po_date_col].min()
+        po_max = df_all[po_date_col].max()
+        if pd.notna(po_min) and pd.notna(po_max):
+            default_range = (po_min.date(), po_max.date())
+        else:
+            default_range = (date(2026, 1, 1), date(2026, 3, 31))
+        po_date_range = st.sidebar.date_input("PO Date", value=default_range, key="dash_po_date")
+        if isinstance(po_date_range, tuple) and len(po_date_range) == 2:
+            po_date_start, po_date_end = po_date_range
+        else:
+            po_date_start = po_date_end = po_date_range
+    else:
+        po_date_start = po_date_end = None
+
+    if has_material_filter:
+        material_list = ["All"] + sorted(df_all[material_filter_col].dropna().astype(str).unique().tolist())
+        selected_material = st.sidebar.selectbox("Material", material_list, key="dash_material")
+    else:
+        selected_material = "All"
+
+    if has_project:
+        project_list = ["All"] + sorted(df_all[project_col].dropna().astype(str).unique().tolist())
+        selected_project = st.sidebar.selectbox("Project", project_list, key="dash_project")
+    else:
+        selected_project = "All"
 
     selected_vendor = st.sidebar.selectbox("Vendor", vendor_list, key="dash_vendor")
     selected_plant = st.sidebar.selectbox("Plant", plant_list, key="dash_plant")
@@ -373,6 +532,17 @@ with tab1:
     selected_matl_group = st.sidebar.selectbox("Material Group", matl_group_list, key="dash_matl_group")
 
     filtered_df = df_all.copy()
+    if has_division_filter and selected_division != "All":
+        filtered_df = filtered_df[filtered_df[division_filter_col].astype(str) == selected_division]
+    if has_po_date_filter and po_date_start is not None and po_date_end is not None:
+        filtered_df = filtered_df[
+            (filtered_df[po_date_col] >= pd.Timestamp(po_date_start))
+            & (filtered_df[po_date_col] <= pd.Timestamp(po_date_end))
+        ]
+    if has_material_filter and selected_material != "All":
+        filtered_df = filtered_df[filtered_df[material_filter_col].astype(str) == selected_material]
+    if has_project and selected_project != "All":
+        filtered_df = filtered_df[filtered_df[project_col].astype(str) == selected_project]
     if has_vendor_name and selected_vendor != "All":
         filtered_df = filtered_df[filtered_df["Vendor Name"].astype(str) == selected_vendor]
     if has_plant and selected_plant != "All":
@@ -435,61 +605,107 @@ with tab1:
     popup_title = None
     popup_df = None
 
-    k1, k2, k3, k4, k5 = st.columns(5)
-    with k1:
-        kpi("Total POs", num_fmt(filtered_df["PurchDoc"].nunique()))
+    # Executive Summary: 3-column layout keeps UOM/currency values readable.
+    if has_division_filter:
+        po_breakdown = (
+            filtered_df.groupby(division_filter_col, dropna=True)["PurchDoc"]
+            .nunique()
+            .reset_index(name="PO Count")
+            .sort_values("PO Count", ascending=False)
+        )
+        po_breakdown_text = " | ".join(
+            [f"{str(r[division_filter_col])}: {num_fmt(r['PO Count'])}" for _, r in po_breakdown.iterrows()]
+        )
+        total_po_value = f"{num_fmt(filtered_df['PurchDoc'].nunique())}<br><span style='font-size:14px;font-weight:600;color:#4B5563'>{po_breakdown_text}</span>" if po_breakdown_text else num_fmt(filtered_df["PurchDoc"].nunique())
+    else:
+        total_po_value = num_fmt(filtered_df["PurchDoc"].nunique())
+
+    row1_col1, row1_col2, row1_col3 = st.columns(3)
+    with row1_col1:
+        kpi("Total POs", total_po_value)
         if st.button("View details", key="kpi_total_pos", use_container_width=True):
             popup_title = "Total POs Drilldown"
             popup_df = filtered_df.copy()
-    with k2:
+
+    with row1_col2:
         vendor_count_col = "Vendor/Supplying plant" if "Vendor/Supplying plant" in filtered_df.columns else ("Vendor Name" if has_vendor_name else None)
         kpi("Total Vendors", num_fmt(filtered_df[vendor_count_col].nunique() if vendor_count_col else 0))
         if st.button("View details", key="kpi_total_vendors", use_container_width=True):
             popup_title = "Total Vendors Drilldown"
             popup_df = filtered_df.copy()
-    with k3:
-        po_uom_text = "<br>".join([f"{str(r[uom_col])}: {num_fmt(r['Total Quantity'])}" for _, r in quantity_uom.head(4).iterrows()]) if not quantity_uom.empty else "0"
+
+    with row1_col3:
+        po_uom_text = (
+            " | ".join([f"{str(r[uom_col])}: {num_fmt(r['Total Quantity'])}" for _, r in quantity_uom.head(4).iterrows()])
+            if not quantity_uom.empty
+            else "0"
+        )
         kpi("PO Quantity by UOM", po_uom_text)
         if st.button("View details", key="kpi_po_qty_uom", use_container_width=True):
             popup_title = "PO Quantity by UOM Drilldown"
-            popup_df = filtered_df[filtered_df[po_qty_col] > 0].copy()
-    with k4:
+            popup_df = (
+                filtered_df[filtered_df[po_qty_col] > 0].copy() if po_qty_col in filtered_df.columns else filtered_df.iloc[0:0]
+            )
+
+    row2_col1, row2_col2, row2_col3 = st.columns(3)
+    with row2_col1:
         inr_total = currency_summary.loc[currency_summary[currency_col].astype(str).str.upper() == "INR", "Total Value"].sum() if not currency_summary.empty else 0
         usd_total = currency_summary.loc[currency_summary[currency_col].astype(str).str.upper() == "USD", "Total Value"].sum() if not currency_summary.empty else 0
-        kpi("PO Value by Currency", f"INR: {inr_total:,.2f}<br>USD: {usd_total:,.2f}", is_amount=True)
+        kpi(
+            "PO Value by Currency",
+            f"{format_inr_compact(inr_total)}<br>{format_usd_compact(usd_total)}",
+            is_amount=True,
+        )
         if st.button("View details", key="kpi_po_value_currency", use_container_width=True):
             popup_title = "PO Value by Currency Drilldown"
-            popup_df = filtered_df[filtered_df[po_value_col] > 0].copy()
-    with k5:
-        gr_uom_text = "<br>".join([f"{str(r[uom_col])}: {num_fmt(r['GR Quantity'])}" for _, r in gr_uom.head(4).iterrows()]) if not gr_uom.empty else "0"
+            popup_df = (
+                filtered_df[filtered_df[po_value_col] > 0].copy() if po_value_col in filtered_df.columns else filtered_df.iloc[0:0]
+            )
+
+    with row2_col2:
+        gr_uom_text = (
+            " | ".join([f"{str(r[uom_col])}: {num_fmt(r['GR Quantity'])}" for _, r in gr_uom.head(4).iterrows()])
+            if not gr_uom.empty
+            else "0"
+        )
         kpi("GR Quantity by UOM", gr_uom_text)
         if st.button("View details", key="kpi_gr_uom", use_container_width=True):
             popup_title = "GR Quantity by UOM Drilldown"
-            popup_df = filtered_df[filtered_df["GR Qty"] > 0].copy()
+            popup_df = filtered_df[filtered_df["GR Qty"] > 0].copy() if "GR Qty" in filtered_df.columns else filtered_df.iloc[0:0]
 
-    k6, k7, k8, k9, k10 = st.columns(5)
-    with k6:
-        pend_uom_text = "<br>".join([f"{str(r[uom_col])}: {num_fmt(r['Pending Delivery Quantity'])}" for _, r in pending_uom.head(4).iterrows()]) if not pending_uom.empty else "0"
+    with row2_col3:
+        pend_uom_text = (
+            " | ".join([f"{str(r[uom_col])}: {num_fmt(r['Pending Delivery Quantity'])}" for _, r in pending_uom.head(4).iterrows()])
+            if not pending_uom.empty
+            else "0"
+        )
         kpi("Pending Delivery Quantity by UOM", pend_uom_text)
         if st.button("View details", key="kpi_pending_uom", use_container_width=True):
             popup_title = "Pending Delivery Quantity by UOM Drilldown"
-            popup_df = filtered_df[filtered_df["Still to be del."] > 0].copy()
-    with k7:
-        kpi("Overdue POs", num_fmt(overdue_df["PurchDoc"].nunique()))
-        if st.button("View details", key="kpi_overdue", use_container_width=True):
-            popup_title = "Overdue POs Drilldown"
-            popup_df = overdue_df.copy()
-    with k8:
+            popup_df = (
+                filtered_df[filtered_df["Still to be del."] > 0].copy()
+                if "Still to be del." in filtered_df.columns
+                else filtered_df.iloc[0:0]
+            )
+
+    row3_col1, row3_col2, row3_col3 = st.columns(3)
+    with row3_col1:
         kpi("No. of Projects", num_fmt(project_count))
         if st.button("View details", key="kpi_projects", use_container_width=True):
             popup_title = "Projects Drilldown"
-            popup_df = filtered_df[filtered_df[project_col].astype(str).str.strip() != ""].copy() if has_project else filtered_df.iloc[0:0]
-    with k9:
+            popup_df = (
+                filtered_df[filtered_df[project_col].astype(str).str.strip() != ""].copy() if has_project else filtered_df.iloc[0:0]
+            )
+
+    with row3_col2:
         kpi("Material Groups", num_fmt(matl_group_count))
         if st.button("View details", key="kpi_matl_groups", use_container_width=True):
             popup_title = "Material Groups Drilldown"
-            popup_df = filtered_df[filtered_df["Matl Group"].astype(str).str.strip() != ""].copy() if has_matl_group else filtered_df.iloc[0:0]
-    with k10:
+            popup_df = (
+                filtered_df[filtered_df["Matl Group"].astype(str).str.strip() != ""].copy() if has_matl_group else filtered_df.iloc[0:0]
+            )
+
+    with row3_col3:
         released_count = release_summary.loc[release_summary["Release Bucket"] == "Released", "PO Count"].sum()
         not_released_count = release_summary.loc[release_summary["Release Bucket"] == "Not Released", "PO Count"].sum()
         kpi("Release Status", f"Released: {num_fmt(released_count)}<br>Not Released: {num_fmt(not_released_count)}")
@@ -608,27 +824,21 @@ with tab1:
 
     chart5, chart6 = st.columns(2)
     with chart5:
-        st.markdown("### Overdue PO Summary")
-        overdue_summary = (
-            overdue_df.groupby("Plant", dropna=True)["PurchDoc"]
-            .nunique()
-            .reset_index(name="Overdue PO Count")
-            .sort_values("Overdue PO Count", ascending=False)
-        )
+        st.markdown("### GR Quantity by UOM")
         fig = px.bar(
-            overdue_summary,
-            x="Plant",
-            y="Overdue PO Count",
-            text="Overdue PO Count",
-            color_discrete_sequence=[CHART_COLORS["delivery"]],
+            gr_uom.head(20),
+            x=uom_col,
+            y="GR Quantity",
+            text="GR Quantity",
+            color_discrete_sequence=[CHART_COLORS["trend"]],
         )
-        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
-        fig.update_layout(xaxis_tickangle=-35, xaxis_title="Plant", yaxis_title="Distinct Overdue POs")
-        event = chart_event(clean_chart(fig, 520), "overdue_summary_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "overdue_summary_click" else None
-        if selected and has_plant:
-            popup_title = f"Overdue PO Drilldown: {selected}"
-            popup_df = overdue_df[overdue_df["Plant"].astype(str) == str(selected)]
+        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside")
+        fig.update_layout(xaxis_title="Order Unit / UOM", yaxis_title="GR Quantity")
+        event = chart_event(clean_chart(fig, 520), "gr_uom_chart_click")
+        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "gr_uom_chart_click" else None
+        if selected and uom_col in filtered_df.columns:
+            popup_title = f"GR Quantity by UOM Drilldown: {selected}"
+            popup_df = filtered_df[(filtered_df[uom_col].astype(str) == str(selected)) & (filtered_df["GR Qty"] > 0)]
 
     with chart6:
         st.markdown("### Release Status Summary")
@@ -665,11 +875,12 @@ with tab1:
                 .head(15)
             )
         else:
-            project_summary = pd.DataFrame(columns=[project_col, "PO Count"])
+            project_summary = pd.DataFrame(columns=["Project", "PO Count"])
+        project_chart_col = project_col if has_project else "Project"
         fig = px.bar(
             project_summary,
             x="PO Count",
-            y=project_col,
+            y=project_chart_col,
             orientation="h",
             text="PO Count",
             color_discrete_sequence=[CHART_COLORS["ai_bar"]],
