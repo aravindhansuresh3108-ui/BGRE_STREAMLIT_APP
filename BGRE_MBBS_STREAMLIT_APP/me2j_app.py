@@ -681,7 +681,7 @@ with tab1:
         )
         kpi("Pending Delivery Quantity by UOM", pend_uom_text)
         if st.button("View details", key="kpi_pending_uom", use_container_width=True):
-            popup_title = "Pending Delivery Quantity by UOM Drilldown"
+            popopup_title = "Projects Drilldown"pup_title = "Pending Delivery Quantity by UOM Drilldown"
             popup_df = (
                 filtered_df[filtered_df["Still to be del."] > 0].copy()
                 if "Still to be del." in filtered_df.columns
@@ -692,10 +692,13 @@ with tab1:
     with row3_col1:
         kpi("No. of Projects", num_fmt(project_count))
         if st.button("View details", key="kpi_projects", use_container_width=True):
-            popup_title = "Projects Drilldown"
+            
             popup_df = (
-                filtered_df[filtered_df[project_col].astype(str).str.strip() != ""].copy() if has_project else filtered_df.iloc[0:0]
-            )
+    filtered_df[filtered_df[project_col].astype(str).str.strip() != ""]
+    .drop_duplicates(subset=[project_col])
+    .sort_values(project_col)
+    .copy()
+)
 
     with row3_col2:
         kpi("Material Groups", num_fmt(matl_group_count))
