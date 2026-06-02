@@ -653,7 +653,7 @@ with tab1:
         usd_total = currency_summary.loc[currency_summary[currency_col].astype(str).str.upper() == "USD", "Total Value"].sum() if not currency_summary.empty else 0
         kpi(
             "PO Value by Currency",
-            f"{format_inr_compact(inr_total)}<br>{format_usd_compact(usd_total)}",
+            f"INR {inr_total:,.2f}<br>USD {usd_total:,.2f}",
             is_amount=True,
         )
         if st.button("View details", key="kpi_po_value_currency", use_container_width=True):
@@ -692,8 +692,8 @@ with tab1:
     with row3_col1:
         kpi("No. of Projects", num_fmt(project_count))
         if st.button("View details", key="kpi_projects", use_container_width=True):
-            
-                        popup_df = (
+            popup_title = "Projects Drilldown"
+            popup_df = (
                 filtered_df[filtered_df[project_col].astype(str).str.strip() != ""]
                 .drop_duplicates(subset=[project_col])
                 .sort_values(project_col)
@@ -718,8 +718,6 @@ with tab1:
             popup_df = release_df.copy()
 
     st.caption(f"Filtered Records: {len(filtered_df):,}")
-    if popup_title and popup_df is not None:
-        show_popup(popup_title, popup_df)
 
     st.divider()
     st.markdown('<div class="section-title">Procurement Performance Insights</div>', unsafe_allow_html=True)
