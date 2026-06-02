@@ -1,4 +1,5 @@
 import json
+from datetime import date
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -61,116 +62,6 @@ CHART_COLORS = {
 def load_data():
     return pd.read_sql("SELECT * FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT", conn)
 
-@st.cache_data(ttl=300)
-def get_kpis():
-    return pd.read_sql("""
-        SELECT
-            COUNT(DISTINCT "PurchDoc") AS TOTAL_POS,
-            COUNT(DISTINCT "Vendor/Supplying plant") AS TOTAL_VENDORS,
-            SUM("POH") AS TOTAL_PO_VALUE,
-            SUM(CASE WHEN "Still to be del." > 0 THEN "Still to be del." ELSE 0 END) AS PENDING_DELIVERY_QTY
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_top_vendors():
-    return pd.read_sql("""
-        SELECT "Vendor Name", SUM("POH") AS "Total PO Value"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Vendor Name" IS NOT NULL
-        GROUP BY "Vendor Name"
-        ORDER BY "Total PO Value" DESC
-        LIMIT 10
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_doc_type_dist():
-    return pd.read_sql("""
-        SELECT "Doc Type", COUNT(DISTINCT "PurchDoc") AS "PO Count"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Doc Type" IS NOT NULL
-        GROUP BY "Doc Type"
-        ORDER BY "PO Count" DESC
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_company_summary():
-    return pd.read_sql("""
-        SELECT "Company Name",
-               SUM("POH") AS "Total PO Value",
-               COUNT(DISTINCT "PurchDoc") AS "PO Count"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Company Name" IS NOT NULL
-        GROUP BY "Company Name"
-        ORDER BY "Total PO Value" DESC
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_plant_summary():
-    return pd.read_sql("""
-        SELECT "Plant",
-               SUM("POH") AS "Total Value",
-               SUM("PO Quantity Sto") AS "Total Qty"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Plant" IS NOT NULL
-        GROUP BY "Plant"
-        ORDER BY "Total Value" DESC
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_matl_group_spend():
-    return pd.read_sql("""
-        SELECT "Matl Group", SUM("POH") AS "Total Spend"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Matl Group" IS NOT NULL
-        GROUP BY "Matl Group"
-        ORDER BY "Total Spend" DESC
-        LIMIT 10
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_delivery_status():
-    return pd.read_sql("""
-        SELECT
-            COALESCE(SUM("GR Qty"), 0) AS "Delivered",
-            COALESCE(SUM(CASE WHEN "Still to be del." > 0 THEN "Still to be del." ELSE 0 END), 0) AS "Pending Delivery",
-            COALESCE(SUM(CASE WHEN "Still to be inv." > 0 THEN "Still to be inv." ELSE 0 END), 0) AS "Pending Invoice"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_monthly_po_trend():
-    return pd.read_sql("""
-        SELECT DATE_TRUNC('MONTH', "Item Doc Date") AS "Month",
-               COUNT(DISTINCT "PurchDoc") AS "PO Count",
-               SUM("POH") AS "PO Value"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Item Doc Date" IS NOT NULL
-        GROUP BY DATE_TRUNC('MONTH', "Item Doc Date")
-        ORDER BY "Month"
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_top_matl_by_qty():
-    return pd.read_sql("""
-        SELECT "Short Text", SUM("PO Quantity Sto") AS "Total Qty", SUM("POH") AS "Total Value"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Short Text" IS NOT NULL
-        GROUP BY "Short Text"
-        ORDER BY "Total Value" DESC
-        LIMIT 10
-    """, conn)
-
-@st.cache_data(ttl=300)
-def get_vendor_count_by_plant():
-    return pd.read_sql("""
-        SELECT "Plant", COUNT(DISTINCT "Vendor/Supplying plant") AS "Vendor Count"
-        FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT
-        WHERE "Plant" IS NOT NULL
-        GROUP BY "Plant"
-        ORDER BY "Vendor Count" DESC
-    """, conn)
-
 def clear_all_caches():
     st.cache_data.clear()
 
@@ -207,25 +98,83 @@ def kpi(title, value, is_amount=False):
 def mini_summary(df, title):
     st.markdown(f"#### {title}")
     a, b, c, d = st.columns(4)
+    po_value_col = "PO Value" if "PO Value" in df.columns else "POH"
     with a:
         kpi("Records", num_fmt(len(df)))
     with b:
         kpi("PO Count", num_fmt(df["PurchDoc"].nunique() if "PurchDoc" in df.columns else 0))
     with c:
-        kpi("PO Value", money_fmt(df["POH"].sum() if "POH" in df.columns else 0), is_amount=True)
+        if "Crcy" in df.columns and po_value_col in df.columns:
+            value_by_currency = (
+                df.groupby("Crcy", dropna=True)[po_value_col]
+                .sum()
+                .reset_index(name="Total Value")
+                .sort_values("Total Value", ascending=False)
+            )
+            currency_text = "<br>".join(
+                [f"{str(r['Crcy'])}: {float(r['Total Value']):,.2f}" for _, r in value_by_currency.head(4).iterrows()]
+            ) if not value_by_currency.empty else "0"
+            kpi("PO Value by Currency", currency_text, is_amount=True)
+        else:
+            kpi("PO Value", money_fmt(df[po_value_col].sum() if po_value_col in df.columns else 0), is_amount=True)
     with d:
-        pending = df["Still to be del."].clip(lower=0).sum() if "Still to be del." in df.columns else 0
-        kpi("Pending Qty", num_fmt(pending))
+        if "Order Unit" in df.columns and "Still to be del." in df.columns:
+            pending_by_uom = (
+                df.groupby("Order Unit", dropna=True)["Still to be del."]
+                .sum()
+                .clip(lower=0)
+                .reset_index(name="Pending Qty")
+                .sort_values("Pending Qty", ascending=False)
+            )
+            pending_text = "<br>".join(
+                [f"{str(r['Order Unit'])}: {num_fmt(r['Pending Qty'])}" for _, r in pending_by_uom.head(4).iterrows()]
+            ) if not pending_by_uom.empty else "0"
+            kpi("Pending Qty by UOM", pending_text)
+        else:
+            pending = df["Still to be del."].clip(lower=0).sum() if "Still to be del." in df.columns else 0
+            kpi("Pending Qty", num_fmt(pending))
 
 def detail_table(df, rows=20):
     show_cols = [
-        "PurchDoc", "Item", "Item Doc Date", "Vendor/Supplying plant",
-        "Vendor Name", "Short Text", "Material", "Material Description",
-        "PO Quantity Sto", "GR Qty", "Still to be del.", "Still to be inv.",
-        "POH", "Plant", "Doc Type", "Company Name", "Matl Group"
+        "PurchDoc",
+        "Item",
+        "PO Date",
+        "Material Code",
+        "Vendor/Supplying plant",
+        "Vendor Name",
+        "Short Text",
+        "Material Description",
+        "Order Unit",
+        "PO Quantity",
+        "GR Qty",
+        "Still to be del.",
+        "Crcy",
+        "PO Value",
+        "Plant",
+        "Matl Group",
+        "Release Status",
+        "Del Date",
     ]
     available = [c for c in show_cols if c in df.columns]
-    st.dataframe(df[available].head(rows), use_container_width=True, hide_index=True, height=420)
+    table_df = df[available].copy()
+    for dcol in ["PO Date", "Del Date"]:
+        if dcol in table_df.columns:
+            raw_dates = table_df[dcol].copy()
+            if dcol == "PO Date" and "Item Doc Date" in df.columns:
+                raw_dates = raw_dates.fillna(df.loc[table_df.index, "Item Doc Date"])
+            if dcol == "Del Date" and "Del Date Raw" in df.columns:
+                raw_dates = raw_dates.fillna(df.loc[table_df.index, "Del Date Raw"])
+            parsed_dayfirst = pd.to_datetime(raw_dates, errors="coerce", dayfirst=True)
+            parsed_default = pd.to_datetime(raw_dates, errors="coerce")
+            parsed_dates = parsed_dayfirst.fillna(parsed_default)
+            formatted_dates = parsed_dates.dt.strftime("%d-%m-%Y")
+            table_df[dcol] = formatted_dates.where(parsed_dates.notna(), raw_dates.astype(str))
+            table_df[dcol] = table_df[dcol].replace({"NaT": "-", "None": "-", "nan": "-", "NaN": "-"}).fillna("-")
+    for mcol in ["Material Code", "Material Description"]:
+        if mcol in table_df.columns:
+            table_df[mcol] = table_df[mcol].fillna("-").astype(str).str.strip()
+            table_df.loc[table_df[mcol].isin(["", "None", "nan", "NaN"]), mcol] = "-"
+    st.dataframe(table_df.head(rows), use_container_width=True, hide_index=True, height=420)
 
 def clean_chart(fig, height=520):
     fig.update_layout(
@@ -236,10 +185,13 @@ def clean_chart(fig, height=520):
         margin=dict(l=10, r=80, t=25, b=60),
         font=dict(size=11),
     )
-    fig.update_traces(
-        selected=dict(marker=dict(opacity=1)),
-        unselected=dict(marker=dict(opacity=0.95)),
-    )
+    # selected/unselected is not supported by pie traces; apply only where compatible
+    for trace in fig.data:
+        if getattr(trace, "type", None) != "pie":
+            trace.update(
+                selected=dict(marker=dict(opacity=1)),
+                unselected=dict(marker=dict(opacity=0.95)),
+            )
     return fig
 
 def mark_active_chart(chart_key):
@@ -262,7 +214,7 @@ def pie_chart_event(fig, key):
         fig,
         use_container_width=True,
         key=key,
-        on_select="rerun",
+        on_select=lambda chart_key=key: mark_active_chart(chart_key),
         selection_mode="points",
         config=PLOTLY_CONFIG,
     )
@@ -303,8 +255,6 @@ with st.sidebar:
     st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
     st.caption("ME2J Procurement Dashboard")
     st.button("🔄 Refresh data", on_click=clear_all_caches, use_container_width=True)
-
-kpis = get_kpis()
 
 st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
 st.title("ME2J Procurement Dashboard")
@@ -385,16 +335,37 @@ with tab1:
     """, unsafe_allow_html=True)
 
     st.markdown('<div class="section-title">Executive Summary</div>', unsafe_allow_html=True)
+    st.caption("Dashboard Period: Jan 2026 - Mar 2026")
 
     df_all = load_data()
-    df_all = clean_numeric(df_all, ["POH", "PO Quantity Sto", "GR Qty", "Still to be del.", "Still to be inv."])
+    df_all = clean_numeric(df_all, ["POH", "PO Value", "PO Quantity Sto", "PO Quantity", "GR Qty", "Still to be del.", "Still to be inv."])
+
+    po_value_col = "PO Value" if "PO Value" in df_all.columns else "POH"
+    po_qty_col = "PO Quantity" if "PO Quantity" in df_all.columns else "PO Quantity Sto"
+    uom_col = "Order Unit" if "Order Unit" in df_all.columns else "UOM"
+    currency_col = "Crcy" if "Crcy" in df_all.columns else "Currency"
+    po_date_col = "PO Date" if "PO Date" in df_all.columns else "Item Doc Date"
+    project_col = "Vald Element" if "Vald Element" in df_all.columns else "WBS Element"
+
+    if "Del Date" in df_all.columns:
+        df_all["Del Date"] = pd.to_datetime(df_all["Del Date"], errors="coerce", dayfirst=True)
+    if po_date_col in df_all.columns:
+        df_all[po_date_col] = pd.to_datetime(df_all[po_date_col], errors="coerce", dayfirst=True)
 
     st.sidebar.subheader("Dashboard Filters")
 
-    vendor_list = ["All"] + sorted(df_all["Vendor Name"].dropna().astype(str).unique().tolist())
-    plant_list = ["All"] + sorted(df_all["Plant"].dropna().astype(str).unique().tolist())
-    doc_type_list = ["All"] + sorted(df_all["Doc Type"].dropna().astype(str).unique().tolist())
-    matl_group_list = ["All"] + sorted(df_all["Matl Group"].dropna().astype(str).unique().tolist())
+    has_vendor_name = "Vendor Name" in df_all.columns
+    has_plant = "Plant" in df_all.columns
+    has_doc_type = "Doc Type" in df_all.columns
+    has_matl_group = "Matl Group" in df_all.columns
+    has_del_date = "Del Date" in df_all.columns
+    has_release_status = "Release Status" in df_all.columns
+    has_project = project_col in df_all.columns
+
+    vendor_list = ["All"] + sorted(df_all["Vendor Name"].dropna().astype(str).unique().tolist()) if has_vendor_name else ["All"]
+    plant_list = ["All"] + sorted(df_all["Plant"].dropna().astype(str).unique().tolist()) if has_plant else ["All"]
+    doc_type_list = ["All"] + sorted(df_all["Doc Type"].dropna().astype(str).unique().tolist()) if has_doc_type else ["All"]
+    matl_group_list = ["All"] + sorted(df_all["Matl Group"].dropna().astype(str).unique().tolist()) if has_matl_group else ["All"]
 
     selected_vendor = st.sidebar.selectbox("Vendor", vendor_list, key="dash_vendor")
     selected_plant = st.sidebar.selectbox("Plant", plant_list, key="dash_plant")
@@ -402,445 +373,339 @@ with tab1:
     selected_matl_group = st.sidebar.selectbox("Material Group", matl_group_list, key="dash_matl_group")
 
     filtered_df = df_all.copy()
-
-    if selected_vendor != "All":
+    if has_vendor_name and selected_vendor != "All":
         filtered_df = filtered_df[filtered_df["Vendor Name"].astype(str) == selected_vendor]
-    if selected_plant != "All":
+    if has_plant and selected_plant != "All":
         filtered_df = filtered_df[filtered_df["Plant"].astype(str) == selected_plant]
-    if selected_doc_type != "All":
+    if has_doc_type and selected_doc_type != "All":
         filtered_df = filtered_df[filtered_df["Doc Type"].astype(str) == selected_doc_type]
-    if selected_matl_group != "All":
+    if has_matl_group and selected_matl_group != "All":
         filtered_df = filtered_df[filtered_df["Matl Group"].astype(str) == selected_matl_group]
+
+    overdue_df = filtered_df[
+        (filtered_df["Del Date"].notna())
+        & (filtered_df["Del Date"].dt.date < date.today())
+        & (filtered_df["Still to be del."] > 0)
+    ] if has_del_date else filtered_df.iloc[0:0]
+
+    quantity_uom = (
+        filtered_df.groupby(uom_col, dropna=True)[po_qty_col]
+        .sum()
+        .reset_index(name="Total Quantity")
+        .sort_values("Total Quantity", ascending=False)
+    ) if uom_col in filtered_df.columns and po_qty_col in filtered_df.columns else pd.DataFrame(columns=[uom_col, "Total Quantity"])
+
+    gr_uom = (
+        filtered_df.groupby(uom_col, dropna=True)["GR Qty"]
+        .sum()
+        .reset_index(name="GR Quantity")
+        .sort_values("GR Quantity", ascending=False)
+    ) if uom_col in filtered_df.columns and "GR Qty" in filtered_df.columns else pd.DataFrame(columns=[uom_col, "GR Quantity"])
+
+    pending_uom = (
+        filtered_df.groupby(uom_col, dropna=True)["Still to be del."]
+        .sum()
+        .reset_index(name="Pending Delivery Quantity")
+    ) if uom_col in filtered_df.columns and "Still to be del." in filtered_df.columns else pd.DataFrame(columns=[uom_col, "Pending Delivery Quantity"])
+    if not pending_uom.empty:
+        pending_uom["Pending Delivery Quantity"] = pending_uom["Pending Delivery Quantity"].clip(lower=0)
+        pending_uom = pending_uom.sort_values("Pending Delivery Quantity", ascending=False)
+
+    currency_summary = (
+        filtered_df.groupby(currency_col, dropna=True)[po_value_col]
+        .sum()
+        .reset_index(name="Total Value")
+        .sort_values("Total Value", ascending=False)
+    ) if currency_col in filtered_df.columns and po_value_col in filtered_df.columns else pd.DataFrame(columns=[currency_col, "Total Value"])
+
+    release_df = filtered_df.copy()
+    if has_release_status:
+        release_df["Release Bucket"] = release_df["Release Status"].astype(str).str.strip().str.upper().map(lambda x: "Released" if x == "R" else "Not Released")
+    else:
+        release_df["Release Bucket"] = "Not Available"
+    release_summary = (
+        release_df.groupby("Release Bucket", dropna=False)["PurchDoc"]
+        .nunique()
+        .reset_index(name="PO Count")
+    )
+
+    project_count = filtered_df[project_col].astype(str).str.strip().replace("", pd.NA).dropna().nunique() if has_project else 0
+    matl_group_count = filtered_df["Matl Group"].astype(str).str.strip().replace("", pd.NA).dropna().nunique() if has_matl_group else 0
 
     popup_title = None
     popup_df = None
 
-    k1, k2, k3, k4 = st.columns(4)
+    k1, k2, k3, k4, k5 = st.columns(5)
     with k1:
         kpi("Total POs", num_fmt(filtered_df["PurchDoc"].nunique()))
         if st.button("View details", key="kpi_total_pos", use_container_width=True):
             popup_title = "Total POs Drilldown"
             popup_df = filtered_df.copy()
     with k2:
-        kpi("Total Vendors", num_fmt(filtered_df["Vendor/Supplying plant"].nunique()))
+        vendor_count_col = "Vendor/Supplying plant" if "Vendor/Supplying plant" in filtered_df.columns else ("Vendor Name" if has_vendor_name else None)
+        kpi("Total Vendors", num_fmt(filtered_df[vendor_count_col].nunique() if vendor_count_col else 0))
         if st.button("View details", key="kpi_total_vendors", use_container_width=True):
             popup_title = "Total Vendors Drilldown"
             popup_df = filtered_df.copy()
     with k3:
-        kpi("Total PO Value", money_fmt(filtered_df["POH"].sum()), is_amount=True)
-        if st.button("View details", key="kpi_total_po_value", use_container_width=True):
-            popup_title = "Total PO Value Drilldown"
-            popup_df = filtered_df[filtered_df["POH"] > 0].copy()
+        po_uom_text = "<br>".join([f"{str(r[uom_col])}: {num_fmt(r['Total Quantity'])}" for _, r in quantity_uom.head(4).iterrows()]) if not quantity_uom.empty else "0"
+        kpi("PO Quantity by UOM", po_uom_text)
+        if st.button("View details", key="kpi_po_qty_uom", use_container_width=True):
+            popup_title = "PO Quantity by UOM Drilldown"
+            popup_df = filtered_df[filtered_df[po_qty_col] > 0].copy()
     with k4:
-        kpi("Pending Delivery Qty", num_fmt(filtered_df["Still to be del."].clip(lower=0).sum()))
-        if st.button("View details", key="kpi_pending_delivery", use_container_width=True):
-            popup_title = "Pending Delivery Drilldown"
-            popup_df = filtered_df[filtered_df["Still to be del."] > 0].copy()
-
-    k5, k6, k7, k8 = st.columns(4)
+        inr_total = currency_summary.loc[currency_summary[currency_col].astype(str).str.upper() == "INR", "Total Value"].sum() if not currency_summary.empty else 0
+        usd_total = currency_summary.loc[currency_summary[currency_col].astype(str).str.upper() == "USD", "Total Value"].sum() if not currency_summary.empty else 0
+        kpi("PO Value by Currency", f"INR: {inr_total:,.2f}<br>USD: {usd_total:,.2f}", is_amount=True)
+        if st.button("View details", key="kpi_po_value_currency", use_container_width=True):
+            popup_title = "PO Value by Currency Drilldown"
+            popup_df = filtered_df[filtered_df[po_value_col] > 0].copy()
     with k5:
-        kpi("Total PO Quantity", num_fmt(filtered_df["PO Quantity Sto"].sum()))
-        if st.button("View details", key="kpi_total_po_qty", use_container_width=True):
-            popup_title = "Total PO Quantity Drilldown"
-            popup_df = filtered_df[filtered_df["PO Quantity Sto"] > 0].copy()
-    with k6:
-        kpi("GR Quantity", num_fmt(filtered_df["GR Qty"].sum()))
-        if st.button("View details", key="kpi_gr_qty", use_container_width=True):
-            popup_title = "GR Quantity Drilldown"
+        gr_uom_text = "<br>".join([f"{str(r[uom_col])}: {num_fmt(r['GR Quantity'])}" for _, r in gr_uom.head(4).iterrows()]) if not gr_uom.empty else "0"
+        kpi("GR Quantity by UOM", gr_uom_text)
+        if st.button("View details", key="kpi_gr_uom", use_container_width=True):
+            popup_title = "GR Quantity by UOM Drilldown"
             popup_df = filtered_df[filtered_df["GR Qty"] > 0].copy()
+
+    k6, k7, k8, k9, k10 = st.columns(5)
+    with k6:
+        pend_uom_text = "<br>".join([f"{str(r[uom_col])}: {num_fmt(r['Pending Delivery Quantity'])}" for _, r in pending_uom.head(4).iterrows()]) if not pending_uom.empty else "0"
+        kpi("Pending Delivery Quantity by UOM", pend_uom_text)
+        if st.button("View details", key="kpi_pending_uom", use_container_width=True):
+            popup_title = "Pending Delivery Quantity by UOM Drilldown"
+            popup_df = filtered_df[filtered_df["Still to be del."] > 0].copy()
     with k7:
-        kpi("Pending Invoice Qty", num_fmt(filtered_df["Still to be inv."].clip(lower=0).sum()))
-        if st.button("View details", key="kpi_pending_invoice", use_container_width=True):
-            popup_title = "Pending Invoice Drilldown"
-            popup_df = filtered_df[filtered_df["Still to be inv."] > 0].copy()
+        kpi("Overdue POs", num_fmt(overdue_df["PurchDoc"].nunique()))
+        if st.button("View details", key="kpi_overdue", use_container_width=True):
+            popup_title = "Overdue POs Drilldown"
+            popup_df = overdue_df.copy()
     with k8:
-        avg_po = filtered_df["POH"].sum() / filtered_df["PurchDoc"].nunique() if filtered_df["PurchDoc"].nunique() else 0
-        kpi("Average PO Value", money_fmt(avg_po), is_amount=True)
-        if st.button("View details", key="kpi_avg_po_value", use_container_width=True):
-            popup_title = "Average PO Value Drilldown"
-            popup_df = filtered_df[filtered_df["POH"] > 0].copy()
+        kpi("No. of Projects", num_fmt(project_count))
+        if st.button("View details", key="kpi_projects", use_container_width=True):
+            popup_title = "Projects Drilldown"
+            popup_df = filtered_df[filtered_df[project_col].astype(str).str.strip() != ""].copy() if has_project else filtered_df.iloc[0:0]
+    with k9:
+        kpi("Material Groups", num_fmt(matl_group_count))
+        if st.button("View details", key="kpi_matl_groups", use_container_width=True):
+            popup_title = "Material Groups Drilldown"
+            popup_df = filtered_df[filtered_df["Matl Group"].astype(str).str.strip() != ""].copy() if has_matl_group else filtered_df.iloc[0:0]
+    with k10:
+        released_count = release_summary.loc[release_summary["Release Bucket"] == "Released", "PO Count"].sum()
+        not_released_count = release_summary.loc[release_summary["Release Bucket"] == "Not Released", "PO Count"].sum()
+        kpi("Release Status", f"Released: {num_fmt(released_count)}<br>Not Released: {num_fmt(not_released_count)}")
+        if st.button("View details", key="kpi_release_status", use_container_width=True):
+            popup_title = "Release Status Drilldown"
+            popup_df = release_df.copy()
 
     st.caption(f"Filtered Records: {len(filtered_df):,}")
+    if popup_title and popup_df is not None:
+        show_popup(popup_title, popup_df)
 
     st.divider()
-
-    # Pre-aggregations
-    vendor_chart = (
-        filtered_df.groupby("Vendor Name", dropna=True)
-        .agg(
-            Total_PO_Value=("POH", "sum"),
-            PO_Count=("PurchDoc", "nunique"),
-            Total_Qty=("PO Quantity Sto", "sum"),
-            Pending_Qty=("Still to be del.", "sum"),
-        )
-        .reset_index()
-        .sort_values("Total_PO_Value", ascending=False)
-        .head(15)
-    )
-
-    material_chart = (
-        filtered_df.groupby("Short Text", dropna=True)
-        .agg(
-            Total_PO_Value=("POH", "sum"),
-            PO_Count=("PurchDoc", "nunique"),
-            Total_Qty=("PO Quantity Sto", "sum"),
-            Pending_Qty=("Still to be del.", "sum"),
-            Pending_Invoice=("Still to be inv.", "sum"),
-        )
-        .reset_index()
-        .sort_values("Total_PO_Value", ascending=False)
-        .head(15)
-    )
+    st.markdown('<div class="section-title">Procurement Performance Insights</div>', unsafe_allow_html=True)
 
     chart1, chart2 = st.columns(2)
-
     with chart1:
-        st.markdown("### Top Vendors by PO Value")
-        fig_vendor = px.bar(
-            vendor_chart,
-            x="Total_PO_Value",
-            y="Vendor Name",
-            orientation="h",
-            text="Total_PO_Value",
-            custom_data=["PO_Count", "Total_Qty", "Pending_Qty"],
-            color_discrete_sequence=[CHART_COLORS["vendor"]],
-        )
-        fig_vendor.update_traces(
-            texttemplate="%{text:,.2f}",
-            textposition="outside",
-            hovertemplate="<b>%{y}</b><br>PO Value: INR %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<br>Total Qty: %{customdata[1]:,.2f}<br>Pending Qty: %{customdata[2]:,.2f}<extra></extra>"
-        )
-        fig_vendor.update_layout(yaxis={"automargin": True}, xaxis_title="PO Value", yaxis_title="Vendor Name")
-        event = chart_event(clean_chart(fig_vendor, 620), "vendor_chart_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "vendor_chart_click" else None
-        if selected:
-            popup_title = f"Vendor Drilldown: {selected}"
-            popup_df = filtered_df[filtered_df["Vendor Name"].astype(str) == str(selected)]
-
-    with chart2:
-        st.markdown("### Top Materials by PO Value")
-        fig_material = px.bar(
-            material_chart,
-            x="Total_PO_Value",
-            y="Short Text",
-            orientation="h",
-            text="Total_PO_Value",
-            custom_data=["PO_Count", "Total_Qty", "Pending_Qty", "Pending_Invoice"],
-            color_discrete_sequence=[CHART_COLORS["material"]],
-        )
-        fig_material.update_traces(
-            texttemplate="%{text:,.2f}",
-            textposition="outside",
-            hovertemplate="<b>%{y}</b><br>PO Value: INR %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<br>Total Qty: %{customdata[1]:,.2f}<br>Pending Delivery: %{customdata[2]:,.2f}<br>Pending Invoice: %{customdata[3]:,.2f}<extra></extra>"
-        )
-        fig_material.update_layout(yaxis={"automargin": True}, xaxis_title="PO Value", yaxis_title="Material / Short Text")
-        event = chart_event(clean_chart(fig_material, 620), "material_chart_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "material_chart_click" else None
-        if selected:
-            popup_title = f"Material Drilldown: {selected}"
-            popup_df = filtered_df[filtered_df["Short Text"].astype(str) == str(selected)]
-
-    chart3, chart4 = st.columns(2)
-
-    with chart3:
-        st.markdown("### Plant Wise Procurement")
-        plant_chart = (
-            filtered_df.groupby("Plant", dropna=True)
-            .agg(Total_Value=("POH", "sum"), Total_Qty=("PO Quantity Sto", "sum"), PO_Count=("PurchDoc", "nunique"))
-            .reset_index()
-            .sort_values("Total_Value", ascending=False)
-        )
-        fig_plant = px.bar(
+        st.markdown("### PO Count by Division/Plant")
+        has_company_name = "Company Name" in filtered_df.columns
+        division_col = "Company Name" if has_company_name else "Plant"
+        if has_plant and has_company_name:
+            plant_chart = (
+                filtered_df.groupby(["Plant", "Company Name"], dropna=True)["PurchDoc"]
+                .nunique()
+                .reset_index(name="PO Count")
+                .sort_values("PO Count", ascending=False)
+                .head(20)
+            )
+        elif has_plant:
+            plant_chart = (
+                filtered_df.groupby("Plant", dropna=True)["PurchDoc"]
+                .nunique()
+                .reset_index(name="PO Count")
+                .sort_values("PO Count", ascending=False)
+                .head(20)
+            )
+        else:
+            plant_chart = pd.DataFrame(columns=["Plant", "PO Count"])
+        fig = px.bar(
             plant_chart,
             x="Plant",
-            y="Total_Value",
-            text="Total_Value",
-            custom_data=["Total_Qty", "PO_Count"],
-            color_discrete_sequence=[CHART_COLORS["plant"]],
+            y="PO Count",
+            color=division_col,
+            text="PO Count",
+            color_discrete_sequence=px.colors.qualitative.Bold,
+            custom_data=[division_col] if division_col in plant_chart.columns else None,
         )
-        fig_plant.update_traces(
-            texttemplate="%{text:,.2f}",
-            textposition="outside",
-            hovertemplate="<b>Plant %{x}</b><br>Total Value: INR %{y:,.2f}<br>Total Qty: %{customdata[0]:,.2f}<br>PO Count: %{customdata[1]:,.0f}<extra></extra>"
-        )
-        fig_plant.update_layout(xaxis_tickangle=-45, xaxis_title="Plant", yaxis_title="Total Value")
-        event = chart_event(clean_chart(fig_plant, 520), "plant_chart_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "plant_chart_click" else None
-        if selected:
-            popup_title = f"Plant Drilldown: {selected}"
+        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+        fig.update_layout(xaxis_tickangle=-35, xaxis_title="Plant", yaxis_title="PO Count")
+        event = chart_event(clean_chart(fig, 560), "po_count_plant_click")
+        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "po_count_plant_click" else None
+        if selected and has_plant:
+            popup_title = f"PO Count by Plant Drilldown: {selected}"
             popup_df = filtered_df[filtered_df["Plant"].astype(str) == str(selected)]
 
-    with chart4:
-        st.markdown("### Document Type Distribution")
-
-        doc_chart = (
-            filtered_df.groupby("Doc Type", dropna=True)
-            .agg(
-                PO_Count=("PurchDoc", "nunique"),
-                Total_PO_Value=("POH", "sum"),
-                Pending_Qty=("Still to be del.", "sum"),
-            )
-            .reset_index()
-            .sort_values("PO_Count", ascending=False)
-        )
-
-        fig_doc = px.bar(
-            doc_chart,
-            x="PO_Count",
-            y="Doc Type",
-            orientation="h",
-            text="PO_Count",
-            custom_data=["Total_PO_Value", "Pending_Qty"],
-            color_discrete_sequence=[CHART_COLORS["doc_type"]],
-        )
-        fig_doc.update_traces(
-            texttemplate="%{text:,.0f}",
-            textposition="outside",
-            hovertemplate="<b>%{y}</b><br>PO Count: %{x:,.0f}<br>PO Value: INR %{customdata[0]:,.2f}<br>Pending Qty: %{customdata[1]:,.2f}<extra></extra>"
-        )
-        fig_doc.update_layout(
-            yaxis={"automargin": True},
-            xaxis_title="PO Count",
-            yaxis_title="Document Type"
-        )
-
-        event = chart_event(clean_chart(fig_doc, 520), "doc_type_bar_chart_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "doc_type_bar_chart_click" else None
-
-        if selected:
-            selected = str(selected)
-            popup_title = f"Document Type Drilldown: {selected}"
-            popup_df = filtered_df[filtered_df["Doc Type"].astype(str) == selected]
-
-    chart5, chart6 = st.columns(2)
-
-    with chart5:
-        st.markdown("### Delivery / Invoice Status")
-        delivery_chart = pd.DataFrame({
-            "Status": ["Delivered", "Pending Delivery", "Pending Invoice"],
-            "Quantity": [
-                filtered_df["GR Qty"].sum(),
-                filtered_df["Still to be del."].clip(lower=0).sum(),
-                filtered_df["Still to be inv."].clip(lower=0).sum(),
-            ],
-        })
-        fig_delivery = px.bar(
-            delivery_chart,
-            x="Status",
-            y="Quantity",
-            text="Quantity",
-            color="Status",
-            color_discrete_sequence=[CHART_COLORS["delivery"], CHART_COLORS["plant"], CHART_COLORS["doc_type"]],
-        )
-        fig_delivery.update_traces(
-            texttemplate="%{text:,.2f}",
-            textposition="outside",
-            hovertemplate="<b>%{x}</b><br>Quantity: %{y:,.2f}<extra></extra>"
-        )
-        fig_delivery.update_layout(xaxis_title="Status", yaxis_title="Quantity")
-        event = chart_event(clean_chart(fig_delivery, 500), "delivery_chart_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "delivery_chart_click" else None
-        if selected:
-            if selected == "Delivered":
-                popup_df = filtered_df[filtered_df["GR Qty"] > 0]
-            elif selected == "Pending Delivery":
-                popup_df = filtered_df[filtered_df["Still to be del."] > 0]
-            else:
-                popup_df = filtered_df[filtered_df["Still to be inv."] > 0]
-            popup_title = f"Status Drilldown: {selected}"
-
-    with chart6:
-        st.markdown("### Monthly PO Value Trend")
-        trend_df = filtered_df.copy()
-        trend_df["Item Doc Date"] = pd.to_datetime(trend_df["Item Doc Date"], errors="coerce")
-        trend_df = (
-            trend_df.dropna(subset=["Item Doc Date"])
-            .groupby(trend_df["Item Doc Date"].dt.to_period("M"))
-            .agg(PO_Value=("POH", "sum"), PO_Count=("PurchDoc", "nunique"))
-            .reset_index()
-        )
-        trend_df["Month"] = trend_df["Item Doc Date"].astype(str)
-        fig_trend = px.line(
-            trend_df,
-            x="Month",
-            y="PO_Value",
-            markers=True,
-            text="PO_Value",
-            custom_data=["PO_Count"],
-            color_discrete_sequence=[CHART_COLORS["trend"]],
-        )
-        fig_trend.update_traces(
-            texttemplate="%{text:,.2f}",
-            textposition="top center",
-            hovertemplate="<b>%{x}</b><br>PO Value: INR %{y:,.2f}<br>PO Count: %{customdata[0]:,.0f}<extra></extra>"
-        )
-        fig_trend.update_layout(xaxis_title="Month", yaxis_title="PO Value")
-        event = chart_event(clean_chart(fig_trend, 500), "trend_chart_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "trend_chart_click" else None
-        if selected:
-            temp = filtered_df.copy()
-            temp["Item Doc Date"] = pd.to_datetime(temp["Item Doc Date"], errors="coerce")
-            popup_df = temp[temp["Item Doc Date"].dt.to_period("M").astype(str) == str(selected)]
-            popup_title = f"Monthly Drilldown: {selected}"
-
-    st.divider()
-    st.markdown('<div class="section-title">Additional Procurement Insights</div>', unsafe_allow_html=True)
-
-    chart7, chart8 = st.columns(2)
-
-    with chart7:
-        st.markdown("### Top Vendors by Pending Delivery")
-        pending_vendor = (
+    with chart2:
+        st.markdown("### Vendor Summary")
+        vendor_chart = (
             filtered_df.groupby("Vendor Name", dropna=True)
-            .agg(Pending_Delivery=("Still to be del.", "sum"), PO_Value=("POH", "sum"), PO_Count=("PurchDoc", "nunique"))
+            .agg(PO_Count=("PurchDoc", "nunique"), PO_Value=(po_value_col, "sum"))
             .reset_index()
-        )
-        pending_vendor = pending_vendor[pending_vendor["Pending_Delivery"] > 0].sort_values("Pending_Delivery", ascending=False).head(15)
+            .sort_values("PO_Value", ascending=False)
+            .head(15)
+        ) if has_vendor_name else pd.DataFrame(columns=["Vendor Name", "PO_Count", "PO_Value"])
         fig = px.bar(
-            pending_vendor,
-            x="Pending_Delivery",
+            vendor_chart,
+            x="PO_Value",
             y="Vendor Name",
             orientation="h",
-            text="Pending_Delivery",
-            custom_data=["PO_Value", "PO_Count"],
-            color_discrete_sequence=[CHART_COLORS["pending_vendor"]],
+            text="PO_Value",
+            custom_data=["PO_Count"],
+            color_discrete_sequence=[CHART_COLORS["vendor"]],
         )
-        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>Pending Delivery: %{x:,.2f}<br>PO Value: INR %{customdata[0]:,.2f}<br>PO Count: %{customdata[1]:,.0f}<extra></extra>")
-        fig.update_layout(yaxis={"automargin": True}, xaxis_title="Pending Delivery", yaxis_title="Vendor Name")
-        event = chart_event(clean_chart(fig, 560), "pending_vendor_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "pending_vendor_click" else None
+        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>PO Value: %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<extra></extra>")
+        fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Value", yaxis_title="Vendor Name")
+        event = chart_event(clean_chart(fig, 560), "vendor_summary_click")
+        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "vendor_summary_click" else None
+        if selected and has_vendor_name:
+            popup_title = f"Vendor Summary Drilldown: {selected}"
+            popup_df = filtered_df[filtered_df["Vendor Name"].astype(str) == str(selected)]
+
+    chart3, chart4 = st.columns(2)
+    with chart3:
+        st.markdown("### Quantity by UOM")
+        fig = px.bar(
+            quantity_uom.head(20),
+            x=uom_col,
+            y="Total Quantity",
+            text="Total Quantity",
+            color_discrete_sequence=[CHART_COLORS["material"]],
+        )
+        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside")
+        fig.update_layout(xaxis_title="Order Unit / UOM", yaxis_title="PO Quantity")
+        event = chart_event(clean_chart(fig, 520), "qty_uom_click")
+        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "qty_uom_click" else None
         if selected:
-            popup_title = f"Pending Delivery Vendor Drilldown: {selected}"
-            popup_df = filtered_df[(filtered_df["Vendor Name"].astype(str) == str(selected)) & (filtered_df["Still to be del."] > 0)]
+            popup_title = f"Quantity by UOM Drilldown: {selected}"
+            popup_df = filtered_df[filtered_df[uom_col].astype(str) == str(selected)]
+
+    with chart4:
+        st.markdown("### Value by Currency")
+        fig = px.bar(
+            currency_summary,
+            x=currency_col,
+            y="Total Value",
+            text="Total Value",
+            color=currency_col,
+            color_discrete_sequence=[CHART_COLORS["company"], CHART_COLORS["plant"], CHART_COLORS["doc_type"]],
+        )
+        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside")
+        fig.update_layout(xaxis_title="Currency", yaxis_title="PO Value")
+        event = chart_event(clean_chart(fig, 520), "value_currency_click")
+        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "value_currency_click" else None
+        if selected:
+            popup_title = f"Value by Currency Drilldown: {selected}"
+            popup_df = filtered_df[filtered_df[currency_col].astype(str) == str(selected)]
+
+    chart5, chart6 = st.columns(2)
+    with chart5:
+        st.markdown("### Overdue PO Summary")
+        overdue_summary = (
+            overdue_df.groupby("Plant", dropna=True)["PurchDoc"]
+            .nunique()
+            .reset_index(name="Overdue PO Count")
+            .sort_values("Overdue PO Count", ascending=False)
+        )
+        fig = px.bar(
+            overdue_summary,
+            x="Plant",
+            y="Overdue PO Count",
+            text="Overdue PO Count",
+            color_discrete_sequence=[CHART_COLORS["delivery"]],
+        )
+        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+        fig.update_layout(xaxis_tickangle=-35, xaxis_title="Plant", yaxis_title="Distinct Overdue POs")
+        event = chart_event(clean_chart(fig, 520), "overdue_summary_click")
+        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "overdue_summary_click" else None
+        if selected and has_plant:
+            popup_title = f"Overdue PO Drilldown: {selected}"
+            popup_df = overdue_df[overdue_df["Plant"].astype(str) == str(selected)]
+
+    with chart6:
+        st.markdown("### Release Status Summary")
+        fig = px.bar(
+            release_summary,
+            x="Release Bucket",
+            y="PO Count",
+            text="PO Count",
+            color="Release Bucket",
+            color_discrete_map={
+                "Released": CHART_COLORS["trend"],
+                "Not Released": CHART_COLORS["doc_type"],
+                "Not Available": CHART_COLORS["delivery"],
+            },
+        )
+        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+        fig.update_layout(xaxis_title="Release Status", yaxis_title="PO Count")
+        event = chart_event(clean_chart(fig, 520), "release_status_click")
+        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "release_status_click" else None
+        if selected:
+            popup_title = f"Release Status Drilldown: {selected}"
+            popup_df = release_df[release_df["Release Bucket"].astype(str) == str(selected)]
+
+    chart7, chart8 = st.columns(2)
+    with chart7:
+        st.markdown("### Project Summary")
+        if has_project:
+            project_summary = (
+                filtered_df[filtered_df[project_col].astype(str).str.strip() != ""]
+                .groupby(project_col, dropna=True)["PurchDoc"]
+                .nunique()
+                .reset_index(name="PO Count")
+                .sort_values("PO Count", ascending=False)
+                .head(15)
+            )
+        else:
+            project_summary = pd.DataFrame(columns=[project_col, "PO Count"])
+        fig = px.bar(
+            project_summary,
+            x="PO Count",
+            y=project_col,
+            orientation="h",
+            text="PO Count",
+            color_discrete_sequence=[CHART_COLORS["ai_bar"]],
+        )
+        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+        fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Count", yaxis_title="Project")
+        event = chart_event(clean_chart(fig, 560), "project_summary_click")
+        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "project_summary_click" else None
+        if selected and has_project:
+            popup_title = f"Project Drilldown: {selected}"
+            popup_df = filtered_df[filtered_df[project_col].astype(str) == str(selected)]
 
     with chart8:
-        st.markdown("### Top Materials by Pending Invoice")
-        pending_material = (
-            filtered_df.groupby("Short Text", dropna=True)
-            .agg(Pending_Invoice=("Still to be inv.", "sum"), PO_Value=("POH", "sum"), PO_Count=("PurchDoc", "nunique"))
-            .reset_index()
-        )
-        pending_material = pending_material[pending_material["Pending_Invoice"] > 0].sort_values("Pending_Invoice", ascending=False).head(15)
-        fig = px.bar(
-            pending_material,
-            x="Pending_Invoice",
-            y="Short Text",
-            orientation="h",
-            text="Pending_Invoice",
-            custom_data=["PO_Value", "PO_Count"],
-            color_discrete_sequence=[CHART_COLORS["pending_material"]],
-        )
-        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>Pending Invoice: %{x:,.2f}<br>PO Value: INR %{customdata[0]:,.2f}<br>PO Count: %{customdata[1]:,.0f}<extra></extra>")
-        fig.update_layout(yaxis={"automargin": True}, xaxis_title="Pending Invoice", yaxis_title="Material / Short Text")
-        event = chart_event(clean_chart(fig, 560), "pending_material_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "pending_material_click" else None
-        if selected:
-            popup_title = f"Pending Invoice Material Drilldown: {selected}"
-            popup_df = filtered_df[(filtered_df["Short Text"].astype(str) == str(selected)) & (filtered_df["Still to be inv."] > 0)]
-
-    chart9, chart10 = st.columns(2)
-
-    with chart9:
-        st.markdown("### Company Wise PO Value")
-        company_chart = (
-            filtered_df.groupby("Company Name", dropna=True)
-            .agg(Total_PO_Value=("POH", "sum"), PO_Count=("PurchDoc", "nunique"))
-            .reset_index()
-            .sort_values("Total_PO_Value", ascending=False)
+        st.markdown("### Material Group Summary")
+        matl_summary = (
+            filtered_df.groupby("Matl Group", dropna=True)["PurchDoc"]
+            .nunique()
+            .reset_index(name="PO Count")
+            .sort_values("PO Count", ascending=False)
             .head(15)
-        )
+        ) if has_matl_group else pd.DataFrame(columns=["Matl Group", "PO Count"])
         fig = px.bar(
-            company_chart,
-            x="Total_PO_Value",
-            y="Company Name",
-            orientation="h",
-            text="Total_PO_Value",
-            custom_data=["PO_Count"],
-            color_discrete_sequence=[CHART_COLORS["company"]],
-        )
-        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>PO Value: INR %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<extra></extra>")
-        fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Value", yaxis_title="Company Name")
-        event = chart_event(clean_chart(fig, 540), "company_chart_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "company_chart_click" else None
-        if selected:
-            popup_title = f"Company Drilldown: {selected}"
-            popup_df = filtered_df[filtered_df["Company Name"].astype(str) == str(selected)]
-
-    with chart10:
-        st.markdown("### Material Group Spend")
-        group_chart = (
-            filtered_df.groupby("Matl Group", dropna=True)
-            .agg(Total_Spend=("POH", "sum"), PO_Count=("PurchDoc", "nunique"))
-            .reset_index()
-            .sort_values("Total_Spend", ascending=False)
-            .head(15)
-        )
-        fig = px.bar(
-            group_chart,
-            x="Total_Spend",
+            matl_summary,
+            x="PO Count",
             y="Matl Group",
             orientation="h",
-            text="Total_Spend",
-            custom_data=["PO_Count"],
+            text="PO Count",
             color_discrete_sequence=[CHART_COLORS["matl_group"]],
         )
-        fig.update_traces(texttemplate="%{text:,.2f}", textposition="outside", hovertemplate="<b>%{y}</b><br>Total Spend: INR %{x:,.2f}<br>PO Count: %{customdata[0]:,.0f}<extra></extra>")
-        fig.update_layout(yaxis={"automargin": True}, xaxis_title="Spend", yaxis_title="Material Group")
-        event = chart_event(clean_chart(fig, 540), "matl_group_chart_click")
-        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "matl_group_chart_click" else None
-        if selected:
+        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside")
+        fig.update_layout(yaxis={"automargin": True}, xaxis_title="PO Count", yaxis_title="Material Group")
+        event = chart_event(clean_chart(fig, 560), "matl_summary_click")
+        selected = get_clicked_value(event, "y") if st.session_state.get("me2j_active_chart") == "matl_summary_click" else None
+        if selected and has_matl_group:
             popup_title = f"Material Group Drilldown: {selected}"
             popup_df = filtered_df[filtered_df["Matl Group"].astype(str) == str(selected)]
-
-    chart11, chart12 = st.columns(2)
-
-    with chart11:
-        st.markdown("### Vendor Count by Plant")
-        vendor_count_chart = (
-            filtered_df.groupby("Plant", dropna=True)
-            .agg(Vendor_Count=("Vendor/Supplying plant", "nunique"), PO_Value=("POH", "sum"))
-            .reset_index()
-            .sort_values("Vendor_Count", ascending=False)
-        )
-        fig = px.bar(
-            vendor_count_chart,
-            x="Plant",
-            y="Vendor_Count",
-            text="Vendor_Count",
-            custom_data=["PO_Value"],
-            color_discrete_sequence=[CHART_COLORS["vendor_count"]],
-        )
-        fig.update_traces(texttemplate="%{text:,.0f}", textposition="outside", hovertemplate="<b>Plant %{x}</b><br>Vendor Count: %{y:,.0f}<br>PO Value: INR %{customdata[0]:,.2f}<extra></extra>")
-        fig.update_layout(xaxis_tickangle=-45, xaxis_title="Plant", yaxis_title="Vendor Count")
-        event = chart_event(clean_chart(fig, 500), "vendor_count_plant_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "vendor_count_plant_click" else None
-        if selected:
-            popup_title = f"Vendor Count Plant Drilldown: {selected}"
-            popup_df = filtered_df[filtered_df["Plant"].astype(str) == str(selected)]
-
-    with chart12:
-        st.markdown("### PO Quantity vs GR Quantity by Plant")
-        qty_chart = (
-            filtered_df.groupby("Plant", dropna=True)
-            .agg(PO_Quantity=("PO Quantity Sto", "sum"), GR_Quantity=("GR Qty", "sum"), PO_Value=("POH", "sum"))
-            .reset_index()
-            .sort_values("PO_Quantity", ascending=False)
-            .head(15)
-        )
-        fig = px.bar(
-            qty_chart,
-            x="Plant",
-            y=["PO_Quantity", "GR_Quantity"],
-            barmode="group",
-            color_discrete_sequence=CHART_COLORS["qty_compare"],
-        )
-        fig.update_traces(hovertemplate="<b>Plant %{x}</b><br>%{fullData.name}: %{y:,.2f}<extra></extra>")
-        fig.update_layout(height=500, dragmode=False, hovermode="closest", clickmode="event", xaxis_tickangle=-45, xaxis_title="Plant", yaxis_title="Quantity", margin=dict(l=10, r=60, t=25, b=80))
-        event = chart_event(fig, "qty_compare_click")
-        selected = get_clicked_value(event, "x") if st.session_state.get("me2j_active_chart") == "qty_compare_click" else None
-        if selected:
-            popup_title = f"PO vs GR Quantity Drilldown: {selected}"
-            popup_df = filtered_df[filtered_df["Plant"].astype(str) == str(selected)]
 
     if popup_title and popup_df is not None:
         show_popup(popup_title, popup_df)
@@ -862,33 +727,38 @@ with tab2:
     st.subheader("Filter & Explore Data")
     df = load_data()
 
+    has_vendor_name_tab2 = "Vendor Name" in df.columns
+    has_plant_tab2 = "Plant" in df.columns
+    has_doc_type_tab2 = "Doc Type" in df.columns
+    has_matl_group_tab2 = "Matl Group" in df.columns
+
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        vendors = ["All"] + sorted(df["Vendor Name"].dropna().unique().tolist())
+        vendors = ["All"] + sorted(df["Vendor Name"].dropna().unique().tolist()) if has_vendor_name_tab2 else ["All"]
         sel_vendor = st.selectbox("Vendor", vendors)
 
     with col2:
-        plants = ["All"] + sorted(df["Plant"].dropna().unique().tolist())
+        plants = ["All"] + sorted(df["Plant"].dropna().unique().tolist()) if has_plant_tab2 else ["All"]
         sel_plant = st.selectbox("Plant", plants)
 
     with col3:
-        doc_types = ["All"] + sorted(df["Doc Type"].dropna().unique().tolist())
+        doc_types = ["All"] + sorted(df["Doc Type"].dropna().unique().tolist()) if has_doc_type_tab2 else ["All"]
         sel_doc_type = st.selectbox("Doc Type", doc_types)
 
     with col4:
-        matl_groups = ["All"] + sorted(df["Matl Group"].dropna().unique().tolist())
+        matl_groups = ["All"] + sorted(df["Matl Group"].dropna().unique().tolist()) if has_matl_group_tab2 else ["All"]
         sel_matl = st.selectbox("Material Group", matl_groups)
 
     filtered = df.copy()
 
-    if sel_vendor != "All":
+    if has_vendor_name_tab2 and sel_vendor != "All":
         filtered = filtered[filtered["Vendor Name"] == sel_vendor]
-    if sel_plant != "All":
+    if has_plant_tab2 and sel_plant != "All":
         filtered = filtered[filtered["Plant"] == sel_plant]
-    if sel_doc_type != "All":
+    if has_doc_type_tab2 and sel_doc_type != "All":
         filtered = filtered[filtered["Doc Type"] == sel_doc_type]
-    if sel_matl != "All":
+    if has_matl_group_tab2 and sel_matl != "All":
         filtered = filtered[filtered["Matl Group"] == sel_matl]
 
     st.caption(f"Showing {len(filtered):,} of {len(df):,} records")
