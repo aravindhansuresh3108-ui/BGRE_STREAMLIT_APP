@@ -997,12 +997,89 @@ with tab3:
     st.subheader("AI Assistant")
     st.caption("Connected to Cortex Agent: BGRE_ME2J_PROCUREMENT_AGENT")
 
+    # Keep AI tab independent from dashboard chart drilldowns/selections.
+    st.session_state.me2j_active_chart = None
+
+    STRICT_AGENT_RULES = """
+You are answering questions for the BGRE ME2J procurement dashboard.
+
+Use only SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT.
+Do not use outside knowledge, assumptions, estimates, or invented business rules.
+
+Important client calculation rules:
+1. PO count must always be COUNT(DISTINCT "PurchDoc").
+2. PO value, spend, procurement value, purchase value, order value, amount, and total value must always use SUM("PO Value").
+3. Never use "Net Price" for total value or spend.
+4. For value questions, keep Currency ("Crcy") visible when multiple currencies exist.
+5. For quantity questions, keep Order Unit visible because different UOMs cannot be added blindly.
+6. For month-wise questions, derive month from TRY_TO_DATE("PO Date", 'DD-MM-YYYY').
+7. For pending delivery, use GREATEST("Still to be del.", 0).
+8. For overdue/delay questions, use TRY_TO_DATE("Del Date", 'DD-MM-YYYY') < CURRENT_DATE() and "Still to be del." > 0.
+9. For project-wise questions, use "Project".
+
+Missing-field rule:
+Do not substitute missing fields with similar available fields.
+If the user asks for Project Manager, Project Head, Approver Name, Approved By, Payment Terms, GST Number,
+Invoice Number, Invoice Date, Transporter, LR Number, GRN Number, Department, or any field not present in
+ME2J_FINAL_REPORT, clearly state that this information is not available in the current ME2J_FINAL_REPORT dataset.
+Do not answer Project Manager questions using Project.
+Do not answer Approver questions using Release Status.
+
+Subjective-question rule:
+For questions like best vendor, worst vendor, risky project, poor performance, or delay performance, explain the measurable
+basis used, such as pending delivery quantity, overdue days, PO value, PO quantity, GR quantity, or PO count.
+If the criteria cannot be derived from available columns, say it is not available.
+"""
+
+    UNAVAILABLE_FIELD_HINTS = {
+        "project manager": "Project Manager",
+        "project head": "Project Head",
+        "manager wise": "Project Manager",
+        "pm wise": "Project Manager",
+        "approver": "Approver Name",
+        "approved by": "Approved By",
+        "approval person": "Approver Name",
+        "payment term": "Payment Terms",
+        "payment terms": "Payment Terms",
+        "gst": "GST Number",
+        "gst number": "GST Number",
+        "invoice number": "Invoice Number",
+        "invoice no": "Invoice Number",
+        "invoice date": "Invoice Date",
+        "transporter": "Transporter",
+        "lr number": "LR Number",
+        "grn number": "GRN Number",
+        "department": "Department",
+    }
+
+    def unavailable_field_response(question):
+        q = question.lower()
+        for key, field_name in UNAVAILABLE_FIELD_HINTS.items():
+            if key in q:
+                return {
+                    "text": (
+                        f"{field_name} is not available in the current ME2J_FINAL_REPORT dataset. "
+                        "I will not substitute it with another column such as Project, Vendor, or Release Status. "
+                        "Please add the required mapping/master data to the dataset if this breakdown is needed."
+                    ),
+                    "sql": None,
+                    "table": None,
+                    "suggestions": [
+                        "Show project-wise PO value",
+                        "Show vendor-wise PO value",
+                        "Which vendor has highest pending delivery?",
+                    ],
+                }
+        return None
+
     def run_agent(question):
+        final_question = STRICT_AGENT_RULES + "\n\nUser Question: " + question
+
         payload = json.dumps({
             "messages": [
                 {
                     "role": "user",
-                    "content": [{"type": "text", "text": question}]
+                    "content": [{"type": "text", "text": final_question}]
                 }
             ]
         })
@@ -1266,8 +1343,17 @@ with tab3:
         with st.chat_message("assistant"):
             with st.spinner("Cortex Agent is analyzing..."):
                 try:
-                    raw_response = run_agent(user_question)
-                    parsed = parse_agent_response(raw_response)
+                    # First block known missing-field questions locally.
+                    # This prevents the agent from substituting unavailable fields
+                    # such as Project Manager with similar fields such as Project.
+                    guarded_response = unavailable_field_response(user_question)
+
+                    if guarded_response is not None:
+                        parsed = guarded_response
+                    else:
+                        raw_response = run_agent(user_question)
+                        parsed = parse_agent_response(raw_response)
+
                     render_agent_result(parsed)
 
                     st.session_state.me2j_agent_messages.append({
