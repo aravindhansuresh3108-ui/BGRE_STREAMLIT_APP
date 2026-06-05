@@ -21,13 +21,16 @@ conn = snowflake.connector.connect(
     schema="ME2J_SCHEMA"
 )
 
-BGR_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="80" height="100">
-  <circle cx="80" cy="52" r="38" fill="#003893"/>
-  <circle cx="80" cy="52" r="26" fill="#ffffff"/>
-  <circle cx="80" cy="52" r="11" fill="#E31937"/>
-  <rect x="77" y="8" width="6" height="18" rx="3" fill="#E31937"/>
-  <text x="80" y="130" text-anchor="middle" font-family="Arial Black,Impact,sans-serif" font-size="52" font-weight="900" fill="#003893">BGR</text>
-  <text x="80" y="165" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="30" font-weight="700" fill="#E31937" letter-spacing="6">ENERGY</text>
+BGR_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 320" width="100" height="110">
+  <rect width="300" height="320" fill="#ffffff"/>
+  <circle cx="150" cy="115" r="100" fill="#00308F"/>
+  <circle cx="150" cy="115" r="78"  fill="#5B9BD5"/>
+  <circle cx="150" cy="115" r="52"  fill="#ffffff"/>
+  <circle cx="150" cy="115" r="36"  fill="#D0112B"/>
+  <circle cx="150" cy="115" r="16"  fill="#ffffff"/>
+  <circle cx="150" cy="115" r="8"   fill="#D0112B"/>
+  <text x="150" y="248" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="72" font-weight="900" fill="#00308F" letter-spacing="-1">BGR</text>
+  <text x="150" y="292" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="26" font-weight="700" fill="#D0112B" letter-spacing="9">ENERGY</text>
 </svg>"""
 
 PLOTLY_CONFIG = {"displayModeBar": False, "displaylogo": False, "scrollZoom": False, "doubleClick": False, "responsive": True}
@@ -168,13 +171,23 @@ div[data-testid="stButton"] button:hover {
 .sidebar-refresh-value { font-size: 12px; color: #003893; font-weight: 700; font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
 
 /* ── Chat / AI tab ── */
-.chat-container { display: flex; flex-direction: column; height: calc(100vh - 200px); }
 .stChatMessage { border-radius: 12px !important; }
-[data-testid="stChatInput"] {
-    position: sticky !important; bottom: 0 !important;
-    background: white !important; z-index: 100 !important;
+
+/* Chat messages area — scrollable fixed height so input stays visible */
+[data-testid="stChatMessageContainer"] {
+    max-height: 58vh !important;
+    overflow-y: auto !important;
+    padding-bottom: 8px !important;
+}
+
+/* Chat input — always pinned at bottom, never scrolls away */
+[data-testid="stBottom"] {
+    position: sticky !important;
+    bottom: 0 !important;
+    background: white !important;
+    z-index: 999 !important;
+    padding-top: 8px !important;
     border-top: 2px solid #003893 !important;
-    padding: 10px 0 !important;
 }
 [data-testid="stChatInput"] textarea {
     border-radius: 24px !important; border: 2px solid #d1daf0 !important;
@@ -360,16 +373,12 @@ with st.sidebar:
     st.markdown("**ME2J Procurement Dashboard**")
     st.markdown("---")
 
-    # Last refresh time
-    try:
-        df_meta = load_data()
-        load_ts = getattr(df_meta, "_load_time", datetime.now().strftime("%d %b %Y, %I:%M %p"))
-    except:
-        load_ts = "—"
+    # Always show current time — not cached time
+    now_ts = datetime.now().strftime("%d %b %Y, %I:%M %p")
     st.markdown(f"""
     <div class="sidebar-refresh-box">
         <div class="sidebar-refresh-label">Last Refreshed</div>
-        <div class="sidebar-refresh-value">{load_ts}</div>
+        <div class="sidebar-refresh-value">{now_ts}</div>
     </div>""", unsafe_allow_html=True)
 
     st.button("🔄 Refresh Data", on_click=clear_all_caches, use_container_width=True)
