@@ -21,16 +21,36 @@ conn = snowflake.connector.connect(
     schema="ME2J_SCHEMA"
 )
 
-BGR_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 320" width="100" height="110">
-  <rect width="300" height="320" fill="#ffffff"/>
-  <circle cx="150" cy="115" r="100" fill="#00308F"/>
-  <circle cx="150" cy="115" r="78"  fill="#5B9BD5"/>
-  <circle cx="150" cy="115" r="52"  fill="#ffffff"/>
-  <circle cx="150" cy="115" r="36"  fill="#D0112B"/>
-  <circle cx="150" cy="115" r="16"  fill="#ffffff"/>
-  <circle cx="150" cy="115" r="8"   fill="#D0112B"/>
-  <text x="150" y="248" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="72" font-weight="900" fill="#00308F" letter-spacing="-1">BGR</text>
-  <text x="150" y="292" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="26" font-weight="700" fill="#D0112B" letter-spacing="9">ENERGY</text>
+BGR_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 260" width="88" height="104">
+  <!-- Transparent background -->
+  <!-- Outer thin blue circle ring -->
+  <circle cx="110" cy="82" r="62" fill="none" stroke="#2060B0" stroke-width="6"/>
+  <!-- Inner white fill -->
+  <circle cx="110" cy="82" r="56" fill="#ffffff"/>
+  <!-- Medium blue ring inside -->
+  <circle cx="110" cy="82" r="38" fill="none" stroke="#2060B0" stroke-width="5"/>
+  <!-- White fill inside medium ring -->
+  <circle cx="110" cy="82" r="33" fill="#ffffff"/>
+  <!-- Red center dot -->
+  <circle cx="110" cy="82" r="16" fill="#D0112B"/>
+  <!-- White tiny center -->
+  <circle cx="110" cy="82" r="5"  fill="#ffffff"/>
+  <!-- BGR text — medium blue, bold but not ultra-heavy -->
+  <text x="110" y="182"
+        text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="66"
+        font-weight="800"
+        fill="#1A5CA8"
+        letter-spacing="1">BGR</text>
+  <!-- ENERGY text — red, spaced out, smaller -->
+  <text x="110" y="218"
+        text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif"
+        font-size="22"
+        font-weight="600"
+        fill="#D0112B"
+        letter-spacing="7">ENERGY</text>
 </svg>"""
 
 PLOTLY_CONFIG = {"displayModeBar": False, "displaylogo": False, "scrollZoom": False, "doubleClick": False, "responsive": True}
