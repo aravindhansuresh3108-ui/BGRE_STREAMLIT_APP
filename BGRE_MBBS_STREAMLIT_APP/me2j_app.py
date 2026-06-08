@@ -21,13 +21,16 @@ conn = snowflake.connector.connect(
     schema="ME2J_SCHEMA"
 )
 
-BGR_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="80" height="100">
-  <circle cx="80" cy="52" r="38" fill="#003893"/>
-  <circle cx="80" cy="52" r="26" fill="#ffffff"/>
-  <circle cx="80" cy="52" r="11" fill="#E31937"/>
-  <rect x="77" y="8" width="6" height="18" rx="3" fill="#E31937"/>
-  <text x="80" y="130" text-anchor="middle" font-family="Arial Black,Impact,sans-serif" font-size="52" font-weight="900" fill="#003893">BGR</text>
-  <text x="80" y="165" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="30" font-weight="700" fill="#E31937" letter-spacing="6">ENERGY</text>
+BGR_LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 320" width="100" height="110">
+  <rect width="300" height="320" fill="#ffffff"/>
+  <circle cx="150" cy="115" r="100" fill="#00308F"/>
+  <circle cx="150" cy="115" r="78"  fill="#5B9BD5"/>
+  <circle cx="150" cy="115" r="52"  fill="#ffffff"/>
+  <circle cx="150" cy="115" r="36"  fill="#D0112B"/>
+  <circle cx="150" cy="115" r="16"  fill="#ffffff"/>
+  <circle cx="150" cy="115" r="8"   fill="#D0112B"/>
+  <text x="150" y="248" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="72" font-weight="900" fill="#00308F" letter-spacing="-1">BGR</text>
+  <text x="150" y="292" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="26" font-weight="700" fill="#D0112B" letter-spacing="9">ENERGY</text>
 </svg>"""
 
 PLOTLY_CONFIG = {"displayModeBar": False, "displaylogo": False, "scrollZoom": False, "doubleClick": False, "responsive": True}
@@ -50,10 +53,13 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     background: #ffffff;
     border: 1px solid #e0e7f0;
     border-radius: 12px;
-    padding: 18px 20px 14px;
-    min-height: 120px;
+    padding: 16px 18px 14px;
+    /* Fixed height — all cards same size, no zig-zag */
+    height: 160px;
     box-shadow: 0 1px 4px rgba(0,56,147,0.07);
     position: relative;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
 }
 .kpi-card::after {
@@ -65,31 +71,45 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     border-radius: 0 0 12px 12px;
 }
 .kpi-title {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 700;
     color: #64748b;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+    flex-shrink: 0;
 }
 .kpi-value {
-    font-size: 22px;
-    font-weight: 700;
+    font-size: 26px;
+    font-weight: 800;
     color: #0f172a;
-    line-height: 1.3;
+    line-height: 1.2;
     word-break: break-word;
+    flex-shrink: 0;
 }
+/* Scrollable sub-lines area inside fixed-height card */
 .kpi-value-sm {
-    font-size: 13px;
+    font-size: 11.5px;
     font-weight: 600;
     color: #1e3a5f;
-    line-height: 1.7;
+    line-height: 1.65;
     font-family: 'IBM Plex Mono', monospace;
+    overflow-y: auto;
+    flex: 1;
+    margin-top: 4px;
+    padding-right: 2px;
+    /* Thin scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #c7d7f0 transparent;
 }
+.kpi-value-sm::-webkit-scrollbar { width: 4px; }
+.kpi-value-sm::-webkit-scrollbar-thumb { background: #c7d7f0; border-radius: 4px; }
 .kpi-amount {
-    font-size: 17px !important;
+    font-size: 16px !important;
     color: #003893 !important;
     font-family: 'IBM Plex Mono', monospace;
+    font-weight: 700 !important;
+    flex-shrink: 0;
 }
 .kpi-badge {
     display: inline-block;
@@ -100,6 +120,7 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     padding: 2px 8px;
     border-radius: 20px;
     margin-top: 4px;
+    flex-shrink: 0;
 }
 
 /* ── Section Title ── */
@@ -168,19 +189,48 @@ div[data-testid="stButton"] button:hover {
 .sidebar-refresh-value { font-size: 12px; color: #003893; font-weight: 700; font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
 
 /* ── Chat / AI tab ── */
-.chat-container { display: flex; flex-direction: column; height: calc(100vh - 200px); }
-.stChatMessage { border-radius: 12px !important; }
-[data-testid="stChatInput"] {
-    position: sticky !important; bottom: 0 !important;
-    background: white !important; z-index: 100 !important;
+.stChatMessage { border-radius: 12px !important; margin-bottom: 6px !important; }
+
+/* Messages area: fixed viewport height, scrolls internally */
+section[data-testid="stMain"] > div > div > div > div[data-testid="stVerticalBlock"]
+  > div[data-testid="stChatMessageContainer"] {
+    max-height: 55vh !important;
+    overflow-y: auto !important;
+    padding-bottom: 6px !important;
+    scrollbar-width: thin;
+    scrollbar-color: #c7d7f0 transparent;
+}
+
+/* Input wrapper — always sticks to bottom of viewport */
+[data-testid="stBottom"] {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 300px !important;   /* sidebar width offset */
+    right: 0 !important;
+    background: #ffffff !important;
+    z-index: 9999 !important;
+    padding: 10px 24px 14px !important;
     border-top: 2px solid #003893 !important;
-    padding: 10px 0 !important;
+    box-shadow: 0 -2px 12px rgba(0,56,147,0.08) !important;
 }
+
+/* Add bottom padding to tab content so last message not hidden behind fixed input */
+section[data-testid="stMain"] > div {
+    padding-bottom: 90px !important;
+}
+
 [data-testid="stChatInput"] textarea {
-    border-radius: 24px !important; border: 2px solid #d1daf0 !important;
-    font-family: 'IBM Plex Sans', sans-serif !important; font-size: 14px !important;
+    border-radius: 24px !important;
+    border: 2px solid #d1daf0 !important;
+    font-family: 'IBM Plex Sans', sans-serif !important;
+    font-size: 14px !important;
+    padding: 10px 18px !important;
 }
-[data-testid="stChatInput"] textarea:focus { border-color: #003893 !important; box-shadow: 0 0 0 3px rgba(0,56,147,0.1) !important; }
+[data-testid="stChatInput"] textarea:focus {
+    border-color: #003893 !important;
+    box-shadow: 0 0 0 3px rgba(0,56,147,0.1) !important;
+    outline: none !important;
+}
 
 /* ── Metric card ── */
 div[data-testid="stMetric"] {
@@ -193,9 +243,67 @@ div[data-testid="stMetric"] {
 # ── Helpers ───────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def load_data():
-    df = pd.read_sql("SELECT * FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT", conn)
-    df._load_time = datetime.now().strftime("%d %b %Y, %I:%M %p")
-    return df
+    return pd.read_sql("SELECT * FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT", conn)
+
+@st.cache_data(ttl=300)
+def get_snowflake_last_updated():
+    """
+    Get the actual last data load time from Snowflake.
+    Tries multiple approaches in order:
+    1. LOAD_TIME / UPDATED_AT / CREATED_AT column in the table
+    2. Snowflake INFORMATION_SCHEMA LAST_ALTERED (table-level metadata)
+    3. MAX(PO Date) as a fallback indicator
+    Returns a formatted string timestamp.
+    """
+    # Attempt 1: Check if table has a load/updated timestamp column
+    ts_candidates = ["LOAD_TIME", "UPDATED_AT", "CREATED_AT", "LOAD_DATE", "ETL_TIMESTAMP"]
+    try:
+        cols_df = pd.read_sql("""
+            SELECT COLUMN_NAME FROM SNOWFLAKE_POC.INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'ME2J_SCHEMA'
+              AND TABLE_NAME   = 'ME2J_FINAL_REPORT'
+              AND UPPER(COLUMN_NAME) IN ('LOAD_TIME','UPDATED_AT','CREATED_AT','LOAD_DATE','ETL_TIMESTAMP')
+            LIMIT 1
+        """, conn)
+        if not cols_df.empty:
+            col = cols_df["COLUMN_NAME"].iloc[0]
+            ts_df = pd.read_sql(
+                f'SELECT MAX("{col}") AS TS FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT', conn
+            )
+            if not ts_df.empty and ts_df["TS"].iloc[0] is not None:
+                ts = pd.to_datetime(ts_df["TS"].iloc[0])
+                return ts.strftime("%d %b %Y, %I:%M %p"), "Snowflake Load Time"
+    except Exception:
+        pass
+
+    # Attempt 2: INFORMATION_SCHEMA table last_altered
+    try:
+        meta_df = pd.read_sql("""
+            SELECT LAST_ALTERED
+            FROM SNOWFLAKE_POC.INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = 'ME2J_SCHEMA'
+              AND TABLE_NAME   = 'ME2J_FINAL_REPORT'
+            LIMIT 1
+        """, conn)
+        if not meta_df.empty and meta_df["LAST_ALTERED"].iloc[0] is not None:
+            ts = pd.to_datetime(meta_df["LAST_ALTERED"].iloc[0])
+            return ts.strftime("%d %b %Y, %I:%M %p"), "Table Last Altered"
+    except Exception:
+        pass
+
+    # Attempt 3: MAX(PO Date) from data
+    try:
+        date_df = pd.read_sql(
+            'SELECT MAX("PO Date") AS MAX_DT FROM SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT', conn
+        )
+        if not date_df.empty and date_df["MAX_DT"].iloc[0] is not None:
+            ts = pd.to_datetime(date_df["MAX_DT"].iloc[0], dayfirst=True, errors="coerce")
+            if pd.notna(ts):
+                return ts.strftime("%d %b %Y"), "Latest PO Date in Data"
+    except Exception:
+        pass
+
+    return "—", "Unknown"
 
 def clear_all_caches():
     st.cache_data.clear()
@@ -360,16 +468,13 @@ with st.sidebar:
     st.markdown("**ME2J Procurement Dashboard**")
     st.markdown("---")
 
-    # Last refresh time
-    try:
-        df_meta = load_data()
-        load_ts = getattr(df_meta, "_load_time", datetime.now().strftime("%d %b %Y, %I:%M %p"))
-    except:
-        load_ts = "—"
+    # Real Snowflake data timestamp
+    sf_ts, ts_source = get_snowflake_last_updated()
     st.markdown(f"""
     <div class="sidebar-refresh-box">
-        <div class="sidebar-refresh-label">Last Refreshed</div>
-        <div class="sidebar-refresh-value">{load_ts}</div>
+        <div class="sidebar-refresh-label">Data Last Updated in Snowflake</div>
+        <div class="sidebar-refresh-value">{sf_ts}</div>
+        <div style="font-size:9px;color:#94a3b8;margin-top:2px;">Source: {ts_source}</div>
     </div>""", unsafe_allow_html=True)
 
     st.button("🔄 Refresh Data", on_click=clear_all_caches, use_container_width=True)
@@ -462,7 +567,7 @@ with tab1:
     if has_mat_code and sel_mc != "All":   fdf = fdf[fdf["Material Code"].astype(str)==sel_mc]
 
     # ── Header banner ─────────────────────────────────────────────────────────
-    load_ts2 = getattr(df_all, "_load_time", datetime.now().strftime("%d %b %Y, %I:%M %p"))
+    sf_ts_hdr, _ = get_snowflake_last_updated()
     st.markdown(f"""
     <div class="dash-header">
         {BGR_LOGO_SVG}
@@ -470,7 +575,10 @@ with tab1:
             <div class="dash-header-title">ME2J Procurement Dashboard</div>
             <div class="dash-header-sub">BGR Energy Systems · SAP Purchase Order Analytics</div>
             <span class="dash-period">📅 Jan 2026 – Mar 2026</span>
-            <div class="dash-refresh-info">Data as of {load_ts2} &nbsp;·&nbsp; {len(fdf):,} records filtered</div>
+            <div class="dash-refresh-info">
+                Data Last Updated in Snowflake: {sf_ts_hdr}
+                &nbsp;·&nbsp; {len(fdf):,} records filtered
+            </div>
         </div>
     </div>""", unsafe_allow_html=True)
 
@@ -766,46 +874,129 @@ with tab3:
         </div>
     </div>""", unsafe_allow_html=True)
 
-    # ── Agent rules ───────────────────────────────────────────────────────────
-    STRICT_RULES = """You are answering questions for the BGRE ME2J procurement dashboard.
+    # ── Agent rules + RAG context layer ──────────────────────────────────────
+    STRICT_RULES = """You are a procurement data analyst for BGR Energy Systems.
+Answer ONLY from SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT.
+Do not guess, assume, or use outside knowledge.
 
-Use ONLY SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT.
-Available columns: Vald Element, PurchDoc, Item, PO Date, Vendor/Supplying plant, Vendor Name,
-Short Text, Material Code, Material Description, PO Quantity, Order Unit, GR Qty,
-Still to be del., Crcy, Plant, PO Value, To be inv., Still to be inv., Net Price, Per,
-Matl Group, POrg, PGr, Doc Type, Del Date, Del Date Raw, Profit Center, Release Status, Project.
+═══════════════════════════════════════════════
+AVAILABLE COLUMNS (29 total — use ONLY these):
+═══════════════════════════════════════════════
+| Column               | Meaning                                          |
+|----------------------|--------------------------------------------------|
+| PurchDoc             | Purchase Order number (PO number)                |
+| Item                 | Line item number within a PO                     |
+| PO Date              | PO creation date (format DD-MM-YYYY)             |
+| Vendor/Supplying plant | Vendor code / SAP vendor number               |
+| Vendor Name          | Full vendor company name                         |
+| Short Text           | Short line item description                      |
+| Material Code        | SAP material number                              |
+| Material Description | Full material name                               |
+| PO Quantity          | Ordered quantity                                 |
+| Order Unit           | Unit of measure (KG, PC, L, BAG, M2, MT, NOS…) |
+| GR Qty               | Goods Receipt quantity — actually received       |
+| Still to be del.     | Pending delivery qty (can be negative = complete)|
+| Crcy                 | Currency code (INR, USD)                         |
+| PO Value             | TOTAL line item value in Crcy — USE FOR SPEND    |
+| Net Price            | Per-unit price only — NOT total value            |
+| Per                  | Pricing unit basis for Net Price                 |
+| Plant                | Delivery plant / project site code               |
+| Matl Group           | Material category / commodity group              |
+| POrg                 | Purchase Organization (1100, 1130, 1140…)        |
+| PGr                  | Purchase Group                                   |
+| Doc Type             | PO document type (NB, ZNB…)                      |
+| Del Date             | Scheduled delivery date                          |
+| Del Date Raw         | Raw delivery date string from SAP                |
+| Profit Center        | Profit Center code                               |
+| Release Status       | R = Released/Approved; blank = Not Released      |
+| Project              | Project code linked to PO                        |
+| Vald Element         | WBS / Validation element                         |
+| To be inv.           | Quantity to be invoiced                          |
+| Still to be inv.     | Quantity still pending invoice                   |
 
-RULES — always follow:
-1. PO count = COUNT(DISTINCT "PurchDoc").
-2. Procurement value / PO value / spend / order value = SUM("PO Value"). Never use Net Price for totals.
-3. Net Price = per-unit price only.
-4. Always show Crcy with monetary values.
-5. Always show Order Unit with quantity values.
-6. Month-wise: use TRY_TO_DATE("PO Date",'DD-MM-YYYY').
-7. Pending delivery = GREATEST("Still to be del.", 0).
-8. Overdue = TRY_TO_DATE("Del Date",'DD-MM-YYYY') < CURRENT_DATE() AND "Still to be del." > 0.
-9. Project-wise = use "Project" column.
-10. Known totals: Total PO Value INR = 450,380,671.69 | Total POs = 536 | Rows = 1453.
+═══════════════════════════════════════════════
+BUSINESS RULES — MUST follow every time:
+═══════════════════════════════════════════════
+R1  PO count           = COUNT(DISTINCT "PurchDoc")
+R2  Vendor count       = COUNT(DISTINCT "Vendor/Supplying plant")
+R3  Project count      = COUNT(DISTINCT "Project")
+R4  Total PO value     = SUM("PO Value")  ← ALWAYS use this for spend/value questions
+R5  Net Price          = per-unit price only — NEVER use SUM("Net Price") for total spend
+R6  Quantities         = always GROUP BY "Order Unit" — never sum across different UOMs
+R7  Currency values    = always show "Crcy" alongside monetary amounts
+R8  Month-wise dates   = TRY_TO_DATE("PO Date", 'DD-MM-YYYY') then DATE_TRUNC('MONTH',…)
+R9  Pending delivery   = GREATEST("Still to be del.", 0)  — negative means delivered
+R10 Overdue POs        = TRY_TO_DATE("Del Date",'DD-MM-YYYY') < CURRENT_DATE()
+                         AND "Still to be del." > 0
+R11 Released POs       = UPPER(TRIM("Release Status")) = 'R'
+R12 Project-wise       = GROUP BY "Project"  — do NOT use "Vald Element" as substitute
 
-MISSING FIELD RULE:
-If asked about Project Manager, Approver, Payment Terms, GST Number, Invoice Number,
-Invoice Date, Transporter, LR Number, GRN Number, Department — clearly state these
-fields are NOT available in ME2J_FINAL_REPORT. Do not substitute with other columns.
+═══════════════════════════════════════════════
+KNOWN VALIDATION TOTALS (full unfiltered data):
+═══════════════════════════════════════════════
+- Total rows            : 1,453
+- Unique POs            : 536
+- Total PO Value (INR)  : 450,380,671.69
+- Total PO Value (USD)  : 507,235.33
+- Total Net Price       : 316,246,109.04  ← this is NOT the procurement value
 
+═══════════════════════════════════════════════
+MISSING FIELD RULE — strict:
+═══════════════════════════════════════════════
+If asked about any field NOT in the 29 columns above, respond EXACTLY:
+"[FieldName] is not available in the ME2J_FINAL_REPORT dataset.
+This information has not been captured in the current SAP extract.
+Please contact the data team if this field needs to be added."
+DO NOT substitute a missing field with any available column.
+Examples:
+- Project Manager  → NOT available (do not use Project column as substitute)
+- Approver / Approved By → NOT available (do not use Release Status as substitute)
+- Invoice Number / Invoice Date → NOT available
+- GST Number / Payment Terms → NOT available
+- Transporter / LR Number / GRN Number → NOT available
+- Department → NOT available
+
+═══════════════════════════════════════════════
 OFF-TOPIC RULE:
-If the question is not related to procurement data in this table, say:
-"This question is outside the scope of ME2J procurement data. Please ask about purchase orders, vendors, materials, projects, or delivery status."
+═══════════════════════════════════════════════
+If the question is not about procurement, purchase orders, vendors, materials,
+projects, delivery, or invoicing in this dataset, respond:
+"This question is outside the scope of ME2J procurement data.
+Please ask about purchase orders, vendors, materials, projects, or delivery status."
 """
 
     GUARD_MAP = {
-        "project manager":"Project Manager","project head":"Project Head",
-        "manager wise":"Project Manager","pm wise":"Project Manager",
-        "approver":"Approver Name","approved by":"Approved By",
-        "approval person":"Approver Name","payment term":"Payment Terms",
-        "gst":"GST Number","invoice number":"Invoice Number",
-        "invoice no":"Invoice Number","invoice date":"Invoice Date",
-        "transporter":"Transporter","lr number":"LR Number",
-        "grn number":"GRN Number","department":"Department",
+        # Project-related
+        "project manager": "Project Manager",
+        "project head": "Project Head",
+        "manager wise": "Project Manager",
+        "pm wise": "Project Manager",
+        "project in charge": "Project In-charge",
+        # Approval-related
+        "approver": "Approver Name",
+        "approved by": "Approved By",
+        "approval person": "Approver Name",
+        "who approved": "Approver Name",
+        # Financial
+        "payment term": "Payment Terms",
+        "payment terms": "Payment Terms",
+        "gst": "GST Number",
+        "gst number": "GST Number",
+        "tax invoice": "Tax Invoice Number",
+        # Invoice/logistics
+        "invoice number": "Invoice Number",
+        "invoice no": "Invoice Number",
+        "invoice date": "Invoice Date",
+        "transporter": "Transporter Name",
+        "lr number": "LR Number",
+        "lorry receipt": "LR Number",
+        "grn number": "GRN Number",
+        "grn date": "GRN Date",
+        # Org
+        "department": "Department",
+        "cost center": "Cost Center",
+        "bank account": "Bank Account",
+        "pan number": "PAN Number",
     }
 
     def guard_check(q):
