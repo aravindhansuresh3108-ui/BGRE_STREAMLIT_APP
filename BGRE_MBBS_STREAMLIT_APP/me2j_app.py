@@ -179,12 +179,10 @@ def kpi_card(title, main_value, sub_lines=None, is_amount=False):
     val_cls = "kpi-amount" if is_amount else "kpi-value"
     sub_html = ""
     if sub_lines:
-        # Filter lines where value is zero or None
         filtered = [l for l in sub_lines if l and not l.strip().endswith(": 0") and not l.strip().endswith(": 0.000")]
         if filtered:
-            # Bold first 2 lines, rest normal
-            bold_lines = [f"<b>{l}</b>" if i < 2 else l for i, l in enumerate(filtered)]
-            sub_html = "<div class='kpi-value-sm'>" + "<br>".join(bold_lines) + "</div>"
+            # No bold — plain text only
+            sub_html = "<div class='kpi-value-sm'>" + "<br>".join(filtered) + "</div>"
     st.markdown(f"""
     <div class="kpi-card">
         <div class="kpi-title">{title}</div>
@@ -297,67 +295,87 @@ def get_val(ev, field):
 @st.dialog("Drilldown Details", width="large")
 def show_popup(title, df):
     st.markdown(f"### {title}")
-    mini_summary_4col(df)
     pv = "PO Value" if "PO Value" in df.columns else "POH"
     uu = "Order Unit" if "Order Unit" in df.columns else "UOM"
 
-    # Purchase Org breakdown — every popup
-    if "POrg" in df.columns and "PurchDoc" in df.columns:
-        bd = df.groupby("POrg",dropna=True)["PurchDoc"].nunique().reset_index(name="PO Count").sort_values("PO Count",ascending=False)
-        if not bd.empty:
-            st.markdown("#### By Purchase Org")
-            st.dataframe(bd, use_container_width=True, hide_index=True, height=180)
+    # ── TOTAL POs ─────────────────────────────────────────────────────────────
+    if "Total POs" in title:
+        cols = [c for c in ["PurchDoc","Vendor/Supplying plant","Vendor Name","Project",
+                             "PO Date","Crcy","PO Value"] if c in df.columns]
+        tdf = df[cols].drop_duplicates(subset=["PurchDoc"] if "PurchDoc" in cols else None)
+        if "PO Date" in tdf.columns:
+            tdf["PO Date"] = pd.to_datetime(tdf["PO Date"],errors="coerce",dayfirst=True).dt.strftime("%d-%m-%Y")
+        if "PO Value" in tdf.columns:
+            tdf["PO Value"] = pd.to_numeric(tdf["PO Value"],errors="coerce").round(2)
+        st.caption(f"{len(tdf):,} unique purchase orders")
+        st.dataframe(tdf.sort_values("PO Value",ascending=False) if "PO Value" in tdf.columns else tdf,
+                     use_container_width=True, hide_index=True, height=420)
 
-    # FIX: Consistent qty logic — PO Qty, GR Qty, Pending = PO-GR; no zeros shown
-    if uu in df.columns and "PO Quantity" in df.columns:
-        uom_qty = (df.groupby(uu,dropna=True)["PO Quantity"].sum()
-                   .reset_index(name="PO Qty")
-                   .assign(**{"PO Qty": lambda x: x["PO Qty"].round(3)})
-                   .query("`PO Qty` > 0")
-                   .sort_values("PO Qty",ascending=False))
-        if not uom_qty.empty:
-            st.markdown("#### PO Quantity by UOM")
-            st.dataframe(uom_qty, use_container_width=True, hide_index=True, height=180)
+    # ── TOTAL VENDORS ─────────────────────────────────────────────────────────
+    elif "Vendor" in title and "Vendor Name" in df.columns:
+        vc_col = "Vendor/Supplying plant" if "Vendor/Supplying plant" in df.columns else None
+        grp_cols = [c for c in ["Vendor/Supplying plant","Vendor Name"] if c in df.columns]
+        vs = (df.groupby(grp_cols, dropna=True)
+              .agg(PO_Count=("PurchDoc","nunique"), PO_Value=(pv,"sum"))
+              .reset_index()
+              .rename(columns={"Vendor/Supplying plant":"Vendor Code","Vendor Name":"Vendor Name"})
+              .sort_values("PO_Value",ascending=False))
+        vs["PO_Value"] = vs["PO_Value"].round(2)
+        st.caption(f"{vs['PO_Count'].sum():,} POs across {len(vs):,} vendors")
+        st.dataframe(vs, use_container_width=True, hide_index=True, height=420)
 
-    if uu in df.columns and "GR Qty" in df.columns:
-        uom_gr = (df.groupby(uu,dropna=True)["GR Qty"].sum()
-                  .reset_index(name="GR Qty")
-                  .assign(**{"GR Qty": lambda x: x["GR Qty"].round(3)})
-                  .query("`GR Qty` > 0")
-                  .sort_values("GR Qty",ascending=False))
-        if not uom_gr.empty:
-            st.markdown("#### GR Quantity by UOM")
-            st.dataframe(uom_gr, use_container_width=True, hide_index=True, height=180)
+    # ── PO QUANTITY BY UOM ────────────────────────────────────────────────────
+    elif "PO Quantity" in title:
+        if uu in df.columns and "PO Quantity" in df.columns:
+            uom_qty = (df.groupby(uu, dropna=True)["PO Quantity"].sum()
+                       .reset_index(name="PO Qty")
+                       .assign(**{"PO Qty": lambda x: x["PO Qty"].round(3)})
+                       .query("`PO Qty` > 0")
+                       .sort_values("PO Qty", ascending=False))
+            st.caption(f"{len(uom_qty):,} UOMs")
+            st.dataframe(uom_qty, use_container_width=True, hide_index=True, height=300)
 
-    # FIX: Pending = PO Qty - GR Qty (not Still to be del. column alone)
-    if uu in df.columns and "PO Quantity" in df.columns and "GR Qty" in df.columns:
-        po_grp  = df.groupby(uu,dropna=True)["PO Quantity"].sum()
-        gr_grp  = df.groupby(uu,dropna=True)["GR Qty"].sum()
-        pend_grp = (po_grp - gr_grp).clip(lower=0).reset_index()
-        pend_grp.columns = [uu, "Pending Qty"]
-        pend_grp["Pending Qty"] = pend_grp["Pending Qty"].round(3)
-        pend_grp = pend_grp[pend_grp["Pending Qty"] > 0].sort_values("Pending Qty",ascending=False)
-        if not pend_grp.empty:
-            st.markdown("#### Pending Delivery by UOM (PO Qty − GR Qty)")
-            st.dataframe(pend_grp, use_container_width=True, hide_index=True, height=180)
+    # ── PO VALUE BY CURRENCY ──────────────────────────────────────────────────
+    elif "PO Value" in title or "Currency" in title:
+        if "Crcy" in df.columns and pv in df.columns:
+            cv = (df.groupby("Crcy", dropna=True)[pv].sum()
+                  .reset_index(name="PO Value")
+                  .assign(**{"PO Value": lambda x: x["PO Value"].round(2)})
+                  .sort_values("PO Value", ascending=False))
+            st.caption(f"{len(cv):,} currencies")
+            st.dataframe(cv, use_container_width=True, hide_index=True, height=200)
 
-    # PO Value by Currency
-    if "Crcy" in df.columns and pv in df.columns:
-        cv = (df.groupby("Crcy",dropna=True)[pv].sum()
-              .reset_index(name="PO Value")
-              .sort_values("PO Value",ascending=False))
-        if not cv.empty:
-            st.markdown("#### PO Value by Currency")
-            st.dataframe(cv, use_container_width=True, hide_index=True, height=120)
+    # ── GR QUANTITY BY UOM ────────────────────────────────────────────────────
+    elif "GR Quantity" in title:
+        if uu in df.columns and "GR Qty" in df.columns:
+            uom_gr = (df.groupby(uu, dropna=True)["GR Qty"].sum()
+                      .reset_index(name="GR Qty")
+                      .assign(**{"GR Qty": lambda x: x["GR Qty"].round(3)})
+                      .query("`GR Qty` > 0")
+                      .sort_values("GR Qty", ascending=False))
+            st.caption(f"{len(uom_gr):,} UOMs")
+            st.dataframe(uom_gr, use_container_width=True, hide_index=True, height=300)
 
-    # PROJECT popup — 2-level summary table
-    if "Project" in title:
+    # ── PENDING DELIVERY BY UOM ───────────────────────────────────────────────
+    elif "Pending" in title:
+        if uu in df.columns and "PO Quantity" in df.columns and "GR Qty" in df.columns:
+            po_g = df.groupby(uu, dropna=True)["PO Quantity"].sum()
+            gr_g = df.groupby(uu, dropna=True)["GR Qty"].sum()
+            pend = (po_g - gr_g).clip(lower=0).reset_index()
+            pend.columns = [uu, "Pending Qty"]
+            pend["Pending Qty"] = pend["Pending Qty"].round(3)
+            pend = pend[pend["Pending Qty"] > 0].sort_values("Pending Qty", ascending=False)
+            st.caption(f"{len(pend):,} UOMs with pending delivery")
+            st.dataframe(pend, use_container_width=True, hide_index=True, height=300)
+
+    # ── NO. OF PROJECTS ───────────────────────────────────────────────────────
+    elif "Project" in title:
         proj_sum = build_project_summary(df)
         if not proj_sum.empty:
-            st.markdown("#### Project-wise Summary")
+            st.caption(f"{len(proj_sum):,} projects")
             st.dataframe(
                 proj_sum, use_container_width=True, hide_index=True,
-                height=min(420, 40+len(proj_sum)*36),
+                height=min(440, 40 + len(proj_sum) * 36),
                 column_config={
                     "PO Value (INR)": st.column_config.NumberColumn(format="₹ %.2f"),
                     "PO Value (USD)": st.column_config.NumberColumn(format="$ %.2f"),
@@ -367,17 +385,41 @@ def show_popup(title, df):
                 }
             )
 
-    # Vendor summary
-    if "Vendor" in title and "Vendor Name" in df.columns and pv in df.columns:
-        vs = (df.groupby("Vendor Name",dropna=True)
-              .agg(PO_Count=("PurchDoc","nunique"), PO_Value=(pv,"sum"))
-              .reset_index().sort_values("PO_Value",ascending=False).head(20))
-        if not vs.empty:
-            st.markdown("#### Vendor Summary")
-            st.dataframe(vs, use_container_width=True, hide_index=True, height=220)
+    # ── MATERIAL GROUPS ───────────────────────────────────────────────────────
+    elif "Material Group" in title:
+        if "Matl Group" in df.columns and pv in df.columns:
+            mg = (df.groupby("Matl Group", dropna=True)
+                  .agg(PO_Count=("PurchDoc","nunique"), PO_Value=(pv,"sum"))
+                  .reset_index()
+                  .rename(columns={"Matl Group":"Material Group"})
+                  .sort_values("PO_Value", ascending=False))
+            mg["PO_Value"] = mg["PO_Value"].round(2)
+            st.caption(f"{len(mg):,} material groups")
+            st.dataframe(mg, use_container_width=True, hide_index=True, height=420)
 
-    st.markdown("#### Line Item Records")
-    detail_table(df, rows=100, height=380)
+    # ── RELEASE STATUS ────────────────────────────────────────────────────────
+    elif "Release" in title:
+        if "Rel Bucket" in df.columns:
+            rs = (df.groupby("Rel Bucket", dropna=False)["PurchDoc"]
+                  .nunique().reset_index(name="PO Count")
+                  .sort_values("PO Count", ascending=False))
+        elif "Release Status" in df.columns:
+            df = df.copy()
+            df["Release Label"] = df["Release Status"].astype(str).str.strip().str.upper().map(
+                lambda x: "Released" if x == "R" else "Not Released")
+            rs = (df.groupby("Release Label", dropna=False)["PurchDoc"]
+                  .nunique().reset_index(name="PO Count")
+                  .sort_values("PO Count", ascending=False))
+        else:
+            rs = pd.DataFrame()
+        if not rs.empty:
+            st.dataframe(rs, use_container_width=True, hide_index=True, height=150)
+
+    # ── CHART DRILLDOWNS (Plant, Vendor chart click etc.) ─────────────────────
+    else:
+        st.dataframe(df.head(200), use_container_width=True, hide_index=True, height=420)
+
+    # Download always available
     csv = df.to_csv(index=False).encode("utf-8")
     safe = title[:15].replace(" ","_")
     st.download_button("⬇ Download", csv, f"ME2J_{safe}.csv", "text/csv",
