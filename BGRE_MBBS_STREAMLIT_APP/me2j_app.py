@@ -298,126 +298,184 @@ def show_popup(title, df):
     pv = "PO Value" if "PO Value" in df.columns else "POH"
     uu = "Order Unit" if "Order Unit" in df.columns else "UOM"
 
-    # ── TOTAL POs ─────────────────────────────────────────────────────────────
+    def show_summary(sdf, caption=""):
+        if caption: st.caption(caption)
+        st.dataframe(sdf, use_container_width=True, hide_index=True,
+                     height=min(300, 44 + len(sdf) * 36))
+
+    def show_detail(ddf, height=380):
+        st.markdown("##### Detailed Records")
+        st.dataframe(ddf, use_container_width=True, hide_index=True, height=height)
+
+    def fmt_date(series):
+        return (pd.to_datetime(series, errors="coerce", dayfirst=True)
+                .dt.strftime("%d-%m-%Y").fillna("-"))
+
+    # ── 1. TOTAL POs ──────────────────────────────────────────────────────────
     if "Total POs" in title:
-        cols = [c for c in ["PurchDoc","Vendor/Supplying plant","Vendor Name","Project",
-                             "PO Date","Crcy","PO Value"] if c in df.columns]
-        tdf = df[cols].drop_duplicates(subset=["PurchDoc"] if "PurchDoc" in cols else None)
-        if "PO Date" in tdf.columns:
-            tdf["PO Date"] = pd.to_datetime(tdf["PO Date"],errors="coerce",dayfirst=True).dt.strftime("%d-%m-%Y")
-        if "PO Value" in tdf.columns:
-            tdf["PO Value"] = pd.to_numeric(tdf["PO Value"],errors="coerce").round(2)
-        st.caption(f"{len(tdf):,} unique purchase orders")
-        st.dataframe(tdf.sort_values("PO Value",ascending=False) if "PO Value" in tdf.columns else tdf,
-                     use_container_width=True, hide_index=True, height=420)
+        # Summary
+        summary = pd.DataFrame({"Metric": ["Total POs"], "Count": [df["PurchDoc"].nunique() if "PurchDoc" in df.columns else 0]})
+        show_summary(summary, "Summary")
+        # Detail
+        dcols = [c for c in ["PurchDoc","Item","Vendor/Supplying plant","Vendor Name",
+                              "Project","PO Date","Crcy","PO Value"] if c in df.columns]
+        ddf = df[dcols].copy()
+        if "PO Date" in ddf.columns: ddf["PO Date"] = fmt_date(ddf["PO Date"])
+        if "PO Value" in ddf.columns: ddf["PO Value"] = pd.to_numeric(ddf["PO Value"],errors="coerce").round(2)
+        show_detail(ddf.sort_values("PO Value",ascending=False) if "PO Value" in ddf.columns else ddf)
 
-    # ── TOTAL VENDORS ─────────────────────────────────────────────────────────
-    elif "Vendor" in title and "Vendor Name" in df.columns:
-        vc_col = "Vendor/Supplying plant" if "Vendor/Supplying plant" in df.columns else None
-        grp_cols = [c for c in ["Vendor/Supplying plant","Vendor Name"] if c in df.columns]
-        vs = (df.groupby(grp_cols, dropna=True)
-              .agg(PO_Count=("PurchDoc","nunique"), PO_Value=(pv,"sum"))
-              .reset_index()
-              .rename(columns={"Vendor/Supplying plant":"Vendor Code","Vendor Name":"Vendor Name"})
-              .sort_values("PO_Value",ascending=False))
-        vs["PO_Value"] = vs["PO_Value"].round(2)
-        st.caption(f"{vs['PO_Count'].sum():,} POs across {len(vs):,} vendors")
-        st.dataframe(vs, use_container_width=True, hide_index=True, height=420)
+    # ── 2. TOTAL VENDORS ──────────────────────────────────────────────────────
+    elif "Vendor" in title and ("Vendors" in title or "vendor" in title.lower()):
+        grp = [c for c in ["Vendor/Supplying plant","Vendor Name"] if c in df.columns]
+        # Summary
+        summary = (df.groupby(grp, dropna=True)
+                   .agg(PO_Count=("PurchDoc","nunique"), PO_Value=(pv,"sum"))
+                   .reset_index()
+                   .rename(columns={"Vendor/Supplying plant":"Vendor","PO_Count":"PO Count","PO_Value":"PO Value"})
+                   .sort_values("PO Value", ascending=False))
+        summary["PO Value"] = summary["PO Value"].round(2)
+        show_summary(summary, f"{len(summary):,} vendors")
+        # Detail — same as summary (vendor-level is the deepest)
+        show_detail(summary, height=340)
 
-    # ── PO QUANTITY BY UOM ────────────────────────────────────────────────────
+    # ── 3. PO QUANTITY BY UOM ─────────────────────────────────────────────────
     elif "PO Quantity" in title:
+        # Summary
         if uu in df.columns and "PO Quantity" in df.columns:
-            uom_qty = (df.groupby(uu, dropna=True)["PO Quantity"].sum()
-                       .reset_index(name="PO Qty")
-                       .assign(**{"PO Qty": lambda x: x["PO Qty"].round(3)})
-                       .query("`PO Qty` > 0")
-                       .sort_values("PO Qty", ascending=False))
-            st.caption(f"{len(uom_qty):,} UOMs")
-            st.dataframe(uom_qty, use_container_width=True, hide_index=True, height=300)
+            summary = (df.groupby(uu, dropna=True)["PO Quantity"].sum()
+                       .reset_index(name="PO Qty").assign(**{"PO Qty": lambda x: x["PO Qty"].round(3)})
+                       .query("`PO Qty` > 0").sort_values("PO Qty", ascending=False))
+            show_summary(summary, f"{len(summary):,} units of measure")
+            # Detail
+            dcols = [c for c in ["Order Unit","PurchDoc","Item","Material Description",
+                                  "PO Quantity","PO Value"] if c in df.columns]
+            ddf = df[dcols].copy()
+            if "PO Quantity" in ddf.columns: ddf["PO Quantity"] = pd.to_numeric(ddf["PO Quantity"],errors="coerce").round(3)
+            if "PO Value"    in ddf.columns: ddf["PO Value"]    = pd.to_numeric(ddf["PO Value"],errors="coerce").round(2)
+            show_detail(ddf[ddf["PO Quantity"] > 0].sort_values("PO Quantity",ascending=False) if "PO Quantity" in ddf.columns else ddf)
 
-    # ── PO VALUE BY CURRENCY ──────────────────────────────────────────────────
+    # ── 4. PO VALUE BY CURRENCY ───────────────────────────────────────────────
     elif "PO Value" in title or "Currency" in title:
+        # Summary
         if "Crcy" in df.columns and pv in df.columns:
-            cv = (df.groupby("Crcy", dropna=True)[pv].sum()
-                  .reset_index(name="PO Value")
-                  .assign(**{"PO Value": lambda x: x["PO Value"].round(2)})
-                  .sort_values("PO Value", ascending=False))
-            st.caption(f"{len(cv):,} currencies")
-            st.dataframe(cv, use_container_width=True, hide_index=True, height=200)
+            summary = (df.groupby("Crcy", dropna=True)[pv].sum()
+                       .reset_index(name="PO Value")
+                       .assign(**{"PO Value": lambda x: x["PO Value"].round(2)})
+                       .rename(columns={"Crcy":"Currency"})
+                       .sort_values("PO Value", ascending=False))
+            show_summary(summary, f"{len(summary):,} currencies")
+            # Detail
+            dcols = [c for c in ["Crcy","PurchDoc","Item","Vendor Name",
+                                  "Project","PO Value"] if c in df.columns]
+            ddf = df[dcols].copy()
+            if "PO Value" in ddf.columns: ddf["PO Value"] = pd.to_numeric(ddf["PO Value"],errors="coerce").round(2)
+            show_detail(ddf.sort_values("PO Value",ascending=False) if "PO Value" in ddf.columns else ddf)
 
-    # ── GR QUANTITY BY UOM ────────────────────────────────────────────────────
+    # ── 5. GR QUANTITY BY UOM ─────────────────────────────────────────────────
     elif "GR Quantity" in title:
+        # Summary
         if uu in df.columns and "GR Qty" in df.columns:
-            uom_gr = (df.groupby(uu, dropna=True)["GR Qty"].sum()
-                      .reset_index(name="GR Qty")
-                      .assign(**{"GR Qty": lambda x: x["GR Qty"].round(3)})
-                      .query("`GR Qty` > 0")
-                      .sort_values("GR Qty", ascending=False))
-            st.caption(f"{len(uom_gr):,} UOMs")
-            st.dataframe(uom_gr, use_container_width=True, hide_index=True, height=300)
+            summary = (df.groupby(uu, dropna=True)["GR Qty"].sum()
+                       .reset_index(name="GR Qty").assign(**{"GR Qty": lambda x: x["GR Qty"].round(3)})
+                       .query("`GR Qty` > 0").sort_values("GR Qty", ascending=False))
+            show_summary(summary, f"{len(summary):,} units of measure")
+            # Detail
+            dcols = [c for c in ["Order Unit","PurchDoc","Item","Material Description",
+                                  "GR Qty"] if c in df.columns]
+            ddf = df[dcols].copy()
+            if "GR Qty" in ddf.columns: ddf["GR Qty"] = pd.to_numeric(ddf["GR Qty"],errors="coerce").round(3)
+            show_detail(ddf[ddf["GR Qty"] > 0].sort_values("GR Qty",ascending=False) if "GR Qty" in ddf.columns else ddf)
 
-    # ── PENDING DELIVERY BY UOM ───────────────────────────────────────────────
+    # ── 6. PENDING DELIVERY BY UOM ────────────────────────────────────────────
     elif "Pending" in title:
         if uu in df.columns and "PO Quantity" in df.columns and "GR Qty" in df.columns:
             po_g = df.groupby(uu, dropna=True)["PO Quantity"].sum()
             gr_g = df.groupby(uu, dropna=True)["GR Qty"].sum()
-            pend = (po_g - gr_g).clip(lower=0).reset_index()
-            pend.columns = [uu, "Pending Qty"]
-            pend["Pending Qty"] = pend["Pending Qty"].round(3)
-            pend = pend[pend["Pending Qty"] > 0].sort_values("Pending Qty", ascending=False)
-            st.caption(f"{len(pend):,} UOMs with pending delivery")
-            st.dataframe(pend, use_container_width=True, hide_index=True, height=300)
+            pend_s = (po_g - gr_g).clip(lower=0).reset_index()
+            pend_s.columns = [uu, "Pending Qty"]
+            pend_s["Pending Qty"] = pend_s["Pending Qty"].round(3)
+            pend_s = pend_s[pend_s["Pending Qty"] > 0].sort_values("Pending Qty", ascending=False)
+            # Summary
+            show_summary(pend_s, f"{len(pend_s):,} UOMs with pending delivery")
+            # Detail
+            ddf = df.copy()
+            ddf["Pending Qty"] = (pd.to_numeric(ddf["PO Quantity"],errors="coerce") -
+                                   pd.to_numeric(ddf["GR Qty"],errors="coerce")).clip(lower=0).round(3)
+            dcols = [c for c in ["Order Unit","PurchDoc","Item","Material Description",
+                                  "PO Quantity","GR Qty","Pending Qty"] if c in ddf.columns]
+            ddf = ddf[dcols].copy()
+            for qc in ["PO Quantity","GR Qty"]:
+                if qc in ddf.columns: ddf[qc] = pd.to_numeric(ddf[qc],errors="coerce").round(3)
+            show_detail(ddf[ddf["Pending Qty"] > 0].sort_values("Pending Qty",ascending=False))
 
-    # ── NO. OF PROJECTS ───────────────────────────────────────────────────────
+    # ── 7. NO. OF PROJECTS ────────────────────────────────────────────────────
     elif "Project" in title:
         proj_sum = build_project_summary(df)
         if not proj_sum.empty:
-            st.caption(f"{len(proj_sum):,} projects")
-            st.dataframe(
-                proj_sum, use_container_width=True, hide_index=True,
-                height=min(440, 40 + len(proj_sum) * 36),
-                column_config={
-                    "PO Value (INR)": st.column_config.NumberColumn(format="₹ %.2f"),
-                    "PO Value (USD)": st.column_config.NumberColumn(format="$ %.2f"),
-                    "PO Qty":         st.column_config.NumberColumn(format="%.3f"),
-                    "GR Qty":         st.column_config.NumberColumn(format="%.3f"),
-                    "Pending Qty":    st.column_config.NumberColumn(format="%.3f"),
-                }
-            )
+            # Summary
+            show_summary(proj_sum[["Project","PO Count","PO Value (INR)","PO Value (USD)"]],
+                         f"{len(proj_sum):,} projects")
+            # Detail
+            dcols = [c for c in ["Project","PurchDoc","Item","Vendor Name",
+                                  "PO Quantity","GR Qty","Crcy","PO Value"] if c in df.columns]
+            ddf = df[df["Project"].astype(str).str.strip().replace("",pd.NA).notna()][dcols].copy() if "Project" in df.columns else df[dcols].copy()
+            for qc in ["PO Quantity","GR Qty"]:
+                if qc in ddf.columns: ddf[qc] = pd.to_numeric(ddf[qc],errors="coerce").round(3)
+            if "PO Value" in ddf.columns: ddf["PO Value"] = pd.to_numeric(ddf["PO Value"],errors="coerce").round(2)
+            show_detail(ddf.sort_values("PO Value",ascending=False) if "PO Value" in ddf.columns else ddf)
 
-    # ── MATERIAL GROUPS ───────────────────────────────────────────────────────
+    # ── 8. MATERIAL GROUPS ────────────────────────────────────────────────────
     elif "Material Group" in title:
-        if "Matl Group" in df.columns and pv in df.columns:
-            mg = (df.groupby("Matl Group", dropna=True)
-                  .agg(PO_Count=("PurchDoc","nunique"), PO_Value=(pv,"sum"))
-                  .reset_index()
-                  .rename(columns={"Matl Group":"Material Group"})
-                  .sort_values("PO_Value", ascending=False))
-            mg["PO_Value"] = mg["PO_Value"].round(2)
-            st.caption(f"{len(mg):,} material groups")
-            st.dataframe(mg, use_container_width=True, hide_index=True, height=420)
+        if "Matl Group" in df.columns:
+            summary = (df.groupby("Matl Group", dropna=True)
+                       .agg(PO_Count=("PurchDoc","nunique"), PO_Value=(pv,"sum"))
+                       .reset_index()
+                       .rename(columns={"Matl Group":"Material Group","PO_Count":"PO Count","PO_Value":"PO Value"})
+                       .sort_values("PO Value", ascending=False))
+            summary["PO Value"] = summary["PO Value"].round(2)
+            # Summary
+            show_summary(summary, f"{len(summary):,} material groups")
+            # Detail
+            dcols = [c for c in ["Matl Group","PurchDoc","Item","Material Description",
+                                  "PO Quantity","Crcy","PO Value"] if c in df.columns]
+            ddf = df[dcols].copy()
+            if "PO Quantity" in ddf.columns: ddf["PO Quantity"] = pd.to_numeric(ddf["PO Quantity"],errors="coerce").round(3)
+            if "PO Value"    in ddf.columns: ddf["PO Value"]    = pd.to_numeric(ddf["PO Value"],errors="coerce").round(2)
+            show_detail(ddf.sort_values("PO Value",ascending=False) if "PO Value" in ddf.columns else ddf)
 
-    # ── RELEASE STATUS ────────────────────────────────────────────────────────
+    # ── 9. RELEASE STATUS ─────────────────────────────────────────────────────
     elif "Release" in title:
-        if "Rel Bucket" in df.columns:
-            rs = (df.groupby("Rel Bucket", dropna=False)["PurchDoc"]
-                  .nunique().reset_index(name="PO Count")
-                  .sort_values("PO Count", ascending=False))
-        elif "Release Status" in df.columns:
+        rel_col = "Rel Bucket" if "Rel Bucket" in df.columns else None
+        if rel_col is None and "Release Status" in df.columns:
             df = df.copy()
-            df["Release Label"] = df["Release Status"].astype(str).str.strip().str.upper().map(
+            df["Rel Bucket"] = df["Release Status"].astype(str).str.strip().str.upper().map(
                 lambda x: "Released" if x == "R" else "Not Released")
-            rs = (df.groupby("Release Label", dropna=False)["PurchDoc"]
-                  .nunique().reset_index(name="PO Count")
-                  .sort_values("PO Count", ascending=False))
-        else:
-            rs = pd.DataFrame()
-        if not rs.empty:
-            st.dataframe(rs, use_container_width=True, hide_index=True, height=150)
+            rel_col = "Rel Bucket"
+        if rel_col:
+            summary = (df.groupby(rel_col, dropna=False)["PurchDoc"].nunique()
+                       .reset_index(name="PO Count")
+                       .rename(columns={rel_col:"Release Status"})
+                       .sort_values("PO Count", ascending=False))
+            # Summary
+            show_summary(summary, "Release status breakdown")
+            # Detail
+            dcols = [c for c in [rel_col,"PurchDoc","Item","Vendor/Supplying plant",
+                                  "Vendor Name","Project","PO Date","Crcy","PO Value"] if c in df.columns]
+            ddf = df[dcols].copy().rename(columns={rel_col:"Release Status"})
+            if "PO Date"  in ddf.columns: ddf["PO Date"]  = fmt_date(ddf["PO Date"])
+            if "PO Value" in ddf.columns: ddf["PO Value"] = pd.to_numeric(ddf["PO Value"],errors="coerce").round(2)
+            show_detail(ddf.sort_values("PO Value",ascending=False) if "PO Value" in ddf.columns else ddf)
 
-    # ── CHART DRILLDOWNS (Plant, Vendor chart click etc.) ─────────────────────
+    # ── CHART CLICK DRILLDOWNS ────────────────────────────────────────────────
     else:
-        st.dataframe(df.head(200), use_container_width=True, hide_index=True, height=420)
+        dcols = [c for c in ["PurchDoc","Item","Vendor Name","Plant","Matl Group","Project",
+                              "PO Date","Order Unit","PO Quantity","GR Qty","Crcy","PO Value"] if c in df.columns]
+        ddf = df[dcols].copy()
+        if "PO Date"     in ddf.columns: ddf["PO Date"]     = fmt_date(ddf["PO Date"])
+        if "PO Quantity" in ddf.columns: ddf["PO Quantity"] = pd.to_numeric(ddf["PO Quantity"],errors="coerce").round(3)
+        if "GR Qty"      in ddf.columns: ddf["GR Qty"]      = pd.to_numeric(ddf["GR Qty"],errors="coerce").round(3)
+        if "PO Value"    in ddf.columns: ddf["PO Value"]    = pd.to_numeric(ddf["PO Value"],errors="coerce").round(2)
+        show_detail(ddf.sort_values("PO Value",ascending=False) if "PO Value" in ddf.columns else ddf, height=440)
 
     # Download always available
     csv = df.to_csv(index=False).encode("utf-8")
