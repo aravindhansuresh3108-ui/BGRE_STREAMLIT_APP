@@ -51,17 +51,17 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     background: linear-gradient(90deg, #003893, #E31937); border-radius: 0 0 12px 12px;
 }
 .kpi-title { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; flex-shrink: 0; }
-.kpi-value { font-size: 26px; font-weight: 800; color: #0f172a; line-height: 1.2; flex-shrink: 0; }
-.kpi-amount { font-size: 16px !important; color: #003893 !important; font-family: 'IBM Plex Mono', monospace; font-weight: 700 !important; flex-shrink: 0; }
+.kpi-value { font-size: 26px; font-weight: 400; color: #0f172a; line-height: 1.2; flex-shrink: 0; }
+.kpi-amount { font-size: 16px !important; color: #003893 !important; font-family: 'IBM Plex Mono', monospace; font-weight: 400 !important; flex-shrink: 0; }
 .kpi-value-sm {
-    font-size: 11.5px; font-weight: 600; color: #1e3a5f; line-height: 1.7;
+    font-size: 11.5px; font-weight: 400; color: #1e3a5f; line-height: 1.7;
     font-family: 'IBM Plex Mono', monospace; overflow-y: auto; flex: 1;
     margin-top: 4px; padding-right: 2px;
     scrollbar-width: thin; scrollbar-color: #c7d7f0 transparent;
 }
 .kpi-value-sm::-webkit-scrollbar { width: 4px; }
 .kpi-value-sm::-webkit-scrollbar-thumb { background: #c7d7f0; border-radius: 4px; }
-.kpi-value-sm b { font-weight: 800; color: #003893; }
+.kpi-value-sm b { font-weight: 400; color: #1e3a5f; }
 
 .section-title { font-size: 16px; font-weight: 700; color: #003893; border-left: 4px solid #E31937; padding-left: 10px; margin: 20px 0 12px; }
 .dash-header { background: linear-gradient(135deg,#003893 0%,#001f5b 100%); border-radius: 14px; padding: 20px 28px; display: flex; align-items: center; gap: 18px; margin-bottom: 16px; box-shadow: 0 4px 16px rgba(0,56,147,0.2); }
@@ -433,9 +433,9 @@ with tab1:
     has_date  = po_date_col in df_all.columns
 
     if has_div:
-        div_list = ["All"] + sorted(df_all[div_col].dropna().astype(str).unique().tolist())
-        sel_div  = st.sidebar.selectbox("Purchase Org", div_list, key="f_div")
-    else: sel_div = "All"
+        div_opts = sorted(df_all[div_col].dropna().astype(str).unique().tolist())
+        sel_div_list = st.sidebar.multiselect("Purchase Org", div_opts, key="f_div", placeholder="All")
+    else: sel_div_list = []
 
     if has_date:
         mn = df_all[po_date_col].min(); mx = df_all[po_date_col].max()
@@ -445,40 +445,46 @@ with tab1:
         ds, de = (dr if isinstance(dr,tuple) and len(dr)==2 else (dr,dr))
     else: ds = de = None
 
-    # Multi-select for Project
     if has_proj:
         proj_opts = sorted(df_all[proj_col].dropna().astype(str).unique().tolist())
-        sel_proj_list = st.sidebar.multiselect("Project (multi-select)", proj_opts,
-                                               key="f_proj", placeholder="All projects")
+        sel_proj_list = st.sidebar.multiselect("Project", proj_opts, key="f_proj", placeholder="All projects")
     else: sel_proj_list = []
 
-    vl = ["All"] + sorted(df_all["Vendor Name"].dropna().astype(str).unique().tolist()) if has_vendor else ["All"]
-    sel_vendor = st.sidebar.selectbox("Vendor", vl, key="f_vendor")
+    if has_vendor:
+        vnd_opts = sorted(df_all["Vendor Name"].dropna().astype(str).unique().tolist())
+        sel_vendor_list = st.sidebar.multiselect("Vendor", vnd_opts, key="f_vendor", placeholder="All")
+    else: sel_vendor_list = []
 
-    pl2 = ["All"] + sorted(df_all["Plant"].dropna().astype(str).unique().tolist()) if has_plant else ["All"]
-    sel_plant = st.sidebar.selectbox("Plant", pl2, key="f_plant")
+    if has_plant:
+        plt_opts = sorted(df_all["Plant"].dropna().astype(str).unique().tolist())
+        sel_plant_list = st.sidebar.multiselect("Plant", plt_opts, key="f_plant", placeholder="All")
+    else: sel_plant_list = []
 
-    dl = ["All"] + sorted(df_all["Doc Type"].dropna().astype(str).unique().tolist()) if has_doc else ["All"]
-    sel_doc = st.sidebar.selectbox("Doc Type", dl, key="f_doc")
+    if has_doc:
+        doc_opts = sorted(df_all["Doc Type"].dropna().astype(str).unique().tolist())
+        sel_doc_list = st.sidebar.multiselect("Doc Type", doc_opts, key="f_doc", placeholder="All")
+    else: sel_doc_list = []
 
-    ml = ["All"] + sorted(df_all["Matl Group"].dropna().astype(str).unique().tolist()) if has_matl else ["All"]
-    sel_matl = st.sidebar.selectbox("Material Group", ml, key="f_matl")
+    if has_matl:
+        matl_opts = sorted(df_all["Matl Group"].dropna().astype(str).unique().tolist())
+        sel_matl_list = st.sidebar.multiselect("Material Group", matl_opts, key="f_matl", placeholder="All")
+    else: sel_matl_list = []
 
     if has_mat_code:
-        mc_list = ["All"] + sorted(df_all["Material Code"].dropna().astype(str).unique().tolist())
-        sel_mc = st.sidebar.selectbox("Material Code", mc_list, key="f_mc")
-    else: sel_mc = "All"
+        mc_opts = sorted(df_all["Material Code"].dropna().astype(str).unique().tolist())
+        sel_mc_list = st.sidebar.multiselect("Material Code", mc_opts, key="f_mc", placeholder="All")
+    else: sel_mc_list = []
 
     # Apply filters
     fdf = df_all.copy()
-    if has_div  and sel_div != "All":        fdf = fdf[fdf[div_col].astype(str)==sel_div]
-    if has_date and ds and de:               fdf = fdf[(fdf[po_date_col]>=pd.Timestamp(ds))&(fdf[po_date_col]<=pd.Timestamp(de))]
-    if has_proj and sel_proj_list:           fdf = fdf[fdf[proj_col].astype(str).isin(sel_proj_list)]
-    if has_vendor and sel_vendor != "All":   fdf = fdf[fdf["Vendor Name"].astype(str)==sel_vendor]
-    if has_plant  and sel_plant  != "All":   fdf = fdf[fdf["Plant"].astype(str)==sel_plant]
-    if has_doc    and sel_doc    != "All":   fdf = fdf[fdf["Doc Type"].astype(str)==sel_doc]
-    if has_matl   and sel_matl   != "All":   fdf = fdf[fdf["Matl Group"].astype(str)==sel_matl]
-    if has_mat_code and sel_mc   != "All":   fdf = fdf[fdf["Material Code"].astype(str)==sel_mc]
+    if has_div    and sel_div_list:    fdf = fdf[fdf[div_col].astype(str).isin(sel_div_list)]
+    if has_date   and ds and de:       fdf = fdf[(fdf[po_date_col]>=pd.Timestamp(ds))&(fdf[po_date_col]<=pd.Timestamp(de))]
+    if has_proj   and sel_proj_list:   fdf = fdf[fdf[proj_col].astype(str).isin(sel_proj_list)]
+    if has_vendor and sel_vendor_list: fdf = fdf[fdf["Vendor Name"].astype(str).isin(sel_vendor_list)]
+    if has_plant  and sel_plant_list:  fdf = fdf[fdf["Plant"].astype(str).isin(sel_plant_list)]
+    if has_doc    and sel_doc_list:    fdf = fdf[fdf["Doc Type"].astype(str).isin(sel_doc_list)]
+    if has_matl   and sel_matl_list:   fdf = fdf[fdf["Matl Group"].astype(str).isin(sel_matl_list)]
+    if has_mat_code and sel_mc_list:   fdf = fdf[fdf["Material Code"].astype(str).isin(sel_mc_list)]
 
     # Header
     sf_ts_hdr, _ = get_snowflake_last_updated()
