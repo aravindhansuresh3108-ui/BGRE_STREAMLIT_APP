@@ -51,17 +51,24 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     background: linear-gradient(90deg, #003893, #E31937); border-radius: 0 0 12px 12px;
 }
 .kpi-title { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; flex-shrink: 0; }
-.kpi-value { font-size: 26px; font-weight: 400; color: #0f172a; line-height: 1.2; flex-shrink: 0; }
-.kpi-amount { font-size: 16px !important; color: #003893 !important; font-family: 'IBM Plex Mono', monospace; font-weight: 400 !important; flex-shrink: 0; }
+.kpi-value { font-size: 26px; font-weight: 300 !important; color: #0f172a; line-height: 1.2; flex-shrink: 0; }
+.kpi-amount { font-size: 16px !important; color: #003893 !important; font-family: 'IBM Plex Mono', monospace; font-weight: 300 !important; flex-shrink: 0; }
 .kpi-value-sm {
-    font-size: 11.5px; font-weight: 400; color: #1e3a5f; line-height: 1.7;
+    font-size: 11.5px; font-weight: 300 !important; color: #1e3a5f; line-height: 1.7;
     font-family: 'IBM Plex Mono', monospace; overflow-y: auto; flex: 1;
     margin-top: 4px; padding-right: 2px;
     scrollbar-width: thin; scrollbar-color: #c7d7f0 transparent;
 }
 .kpi-value-sm::-webkit-scrollbar { width: 4px; }
 .kpi-value-sm::-webkit-scrollbar-thumb { background: #c7d7f0; border-radius: 4px; }
-.kpi-value-sm b { font-weight: 400; color: #1e3a5f; }
+/* Nuclear option: strip bold from everything inside card except the title */
+.kpi-card div:not(.kpi-title),
+.kpi-card span,
+.kpi-card b,
+.kpi-card strong {
+    font-weight: 300 !important;
+}
+.kpi-card .kpi-title { font-weight: 700 !important; }
 
 .section-title { font-size: 16px; font-weight: 700; color: #003893; border-left: 4px solid #E31937; padding-left: 10px; margin: 20px 0 12px; }
 .dash-header { background: linear-gradient(135deg,#003893 0%,#001f5b 100%); border-radius: 14px; padding: 20px 28px; display: flex; align-items: center; gap: 18px; margin-bottom: 16px; box-shadow: 0 4px 16px rgba(0,56,147,0.2); }
@@ -912,7 +919,38 @@ with tab2:
         f2 = f2[mask]
 
     st.caption(f"Showing {len(f2):,} of {len(df2):,} records")
-    detail_table(f2, rows=500, height=500)
+
+    # Excel-style filterable table
+    # Format quantity columns to 3 decimal
+    f2_display = f2.copy()
+    for qc in ["PO Quantity","GR Qty","Still to be del.","Still to be inv.","To be inv."]:
+        if qc in f2_display.columns:
+            f2_display[qc] = pd.to_numeric(f2_display[qc], errors="coerce").round(3)
+    for vc in ["PO Value","Net Price"]:
+        if vc in f2_display.columns:
+            f2_display[vc] = pd.to_numeric(f2_display[vc], errors="coerce").round(2)
+    for dc in ["PO Date","Del Date"]:
+        if dc in f2_display.columns:
+            p1 = pd.to_datetime(f2_display[dc], errors="coerce", dayfirst=True)
+            p2 = pd.to_datetime(f2_display[dc], errors="coerce")
+            parsed = p1.fillna(p2)
+            f2_display[dc] = parsed.dt.strftime("%d-%m-%Y").where(parsed.notna(), f2_display[dc].astype(str))
+
+    st.dataframe(
+        f2_display,
+        use_container_width=True,
+        height=520,
+        hide_index=True,
+        column_config={
+            "PO Value":        st.column_config.NumberColumn("PO Value",        format="%.2f"),
+            "Net Price":       st.column_config.NumberColumn("Net Price",        format="%.2f"),
+            "PO Quantity":     st.column_config.NumberColumn("PO Quantity",      format="%.3f"),
+            "GR Qty":          st.column_config.NumberColumn("GR Qty",           format="%.3f"),
+            "Still to be del.":st.column_config.NumberColumn("Still to be del.", format="%.3f"),
+            "Still to be inv.":st.column_config.NumberColumn("Still to be inv.", format="%.3f"),
+            "To be inv.":      st.column_config.NumberColumn("To be inv.",       format="%.3f"),
+        }
+    )
     csv2 = f2.to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Download CSV", csv2, "ME2J_EXPLORER.csv", "text/csv", key="dl_exp")
 
