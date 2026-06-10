@@ -51,11 +51,16 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     background: linear-gradient(90deg, #003893, #E31937); border-radius: 0 0 12px 12px;
 }
 .kpi-title { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; flex-shrink: 0; }
-.kpi-value { font-size: 26px; font-weight: 300 !important; color: #0f172a; line-height: 1.2; flex-shrink: 0; }
-.kpi-amount { font-size: 16px !important; color: #003893 !important; font-family: 'IBM Plex Mono', monospace; font-weight: 300 !important; flex-shrink: 0; }
+.kpi-value, .kpi-amount, .kpi-value-sm {
+    font-size: 13px !important;
+    font-weight: 300 !important;
+    color: #003893 !important;
+    line-height: 1.7;
+    font-family: 'IBM Plex Mono', monospace;
+    flex-shrink: 0;
+}
 .kpi-value-sm {
-    font-size: 11.5px; font-weight: 300 !important; color: #1e3a5f; line-height: 1.7;
-    font-family: 'IBM Plex Mono', monospace; overflow-y: auto; flex: 1;
+    overflow-y: auto; flex: 1;
     margin-top: 4px; padding-right: 2px;
     scrollbar-width: thin; scrollbar-color: #c7d7f0 transparent;
 }
@@ -183,18 +188,16 @@ def clean_numeric(df, cols):
     return df
 
 def kpi_card(title, main_value, sub_lines=None, is_amount=False):
-    val_cls = "kpi-amount" if is_amount else "kpi-value"
-    sub_html = ""
+    # Keep all values inside summary cards in the same size and weight.
+    # Title remains separate; first value is not enlarged.
+    lines = [str(main_value)]
     if sub_lines:
-        filtered = [l for l in sub_lines if l and not l.strip().endswith(": 0") and not l.strip().endswith(": 0.000")]
-        if filtered:
-            # No bold — plain text only
-            sub_html = "<div class='kpi-value-sm'>" + "<br>".join(filtered) + "</div>"
+        lines.extend([str(l) for l in sub_lines if l and not str(l).strip().endswith(": 0") and not str(l).strip().endswith(": 0.000")])
+    val_html = "<div class='kpi-value-sm'>" + "<br>".join(lines) + "</div>"
     st.markdown(f"""
     <div class="kpi-card">
         <div class="kpi-title">{title}</div>
-        <div class="{val_cls}">{main_value}</div>
-        {sub_html}
+        {val_html}
     </div>""", unsafe_allow_html=True)
 
 def detail_table(df, rows=25, height=400):
@@ -917,6 +920,24 @@ with tab2:
             if col in f2.columns:
                 mask = mask | f2[col].astype(str).str.lower().str.contains(kw, na=False)
         f2 = f2[mask]
+
+    # Column-wise filters for final table / Data Explorer
+    with st.expander("🔎 Column-wise filters", expanded=False):
+        filter_cols = st.multiselect(
+            "Select columns to filter",
+            options=list(f2.columns),
+            default=[],
+            key="t2_filter_cols",
+            placeholder="Choose columns"
+        )
+        if filter_cols:
+            for i in range(0, len(filter_cols), 3):
+                cols = st.columns(3)
+                for j, col_name in enumerate(filter_cols[i:i+3]):
+                    with cols[j]:
+                        val = st.text_input(f"Filter {col_name}", key=f"t2_col_filter_{col_name}")
+                    if val.strip():
+                        f2 = f2[f2[col_name].astype(str).str.contains(val.strip(), case=False, na=False)]
 
     st.caption(f"Showing {len(f2):,} of {len(df2):,} records")
 
