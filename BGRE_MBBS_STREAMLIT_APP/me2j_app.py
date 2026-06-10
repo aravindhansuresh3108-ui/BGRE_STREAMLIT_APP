@@ -231,39 +231,52 @@ def detail_table(df, rows=25, height=400):
             tdf[c] = tdf[c].fillna("-").astype(str).str.strip()
             tdf.loc[tdf[c].isin(["","None","nan","NaN"]),c] = "-"
 
-    # Show 3 decimal for quantity columns
     for qc in ["PO Quantity","GR Qty","Still to be del."]:
         if qc in tdf.columns:
             tdf[qc] = pd.to_numeric(tdf[qc], errors="coerce").round(3)
 
     display_df = tdf.head(rows)
 
-    if AgGrid is not None:
-        gb = GridOptionsBuilder.from_dataframe(display_df)
-        gb.configure_default_column(
-            filter=True,
-            sortable=True,
-            resizable=True,
-            floatingFilter=True
-        )
-        gb.configure_pagination(
-            paginationAutoPageSize=False,
-            paginationPageSize=25
-        )
-        AgGrid(
-            display_df,
-            gridOptions=gb.build(),
-            height=height,
-            fit_columns_on_grid_load=False,
-            theme="streamlit"
-        )
-    else:
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True,
-            height=height
-        )
+    # First view: normal readable preview table
+    st.dataframe(
+        display_df,
+        use_container_width=True,
+        hide_index=True,
+        height=height
+    )
+
+    # Optional Excel-style filter view
+    show_excel = st.checkbox(
+        "Show Advanced Excel Filter View",
+        value=False,
+        key=f"detail_excel_{len(tdf)}_{rows}_{height}"
+    )
+
+    if show_excel:
+        if AgGrid is not None:
+            gb = GridOptionsBuilder.from_dataframe(display_df)
+            gb.configure_default_column(
+                filter=True,
+                sortable=True,
+                resizable=True,
+                floatingFilter=True
+            )
+            gb.configure_pagination(
+                paginationAutoPageSize=False,
+                paginationPageSize=25
+            )
+            AgGrid(
+                display_df,
+                gridOptions=gb.build(),
+                height=height,
+                fit_columns_on_grid_load=False,
+                allow_unsafe_jscode=True,
+                enable_enterprise_modules=False,
+                update_mode=GridUpdateMode.NO_UPDATE if GridUpdateMode is not None else None,
+                theme="streamlit"
+            )
+        else:
+            st.warning("Excel-style filters need streamlit-aggrid. Showing normal table only.")
 
 def mini_summary_4col(df):
     a,b,c,d = st.columns(4)
@@ -414,7 +427,13 @@ def show_popup(title, df):
         )
 
         # Optional second view: Excel-style filter table
-        with st.expander("Advanced Excel Filter View"):
+        show_excel = st.checkbox(
+            "Show Advanced Excel Filter View",
+            value=False,
+            key=f"popup_excel_{caption}_{len(tdf)}_{height}"
+        )
+
+        if show_excel:
             if AgGrid is not None:
                 gb = GridOptionsBuilder.from_dataframe(tdf)
                 gb.configure_default_column(
@@ -449,16 +468,10 @@ def show_popup(title, df):
                     allow_unsafe_jscode=True,
                     enable_enterprise_modules=False,
                     update_mode=GridUpdateMode.NO_UPDATE if GridUpdateMode is not None else None,
-                    theme="alpine",
+                    theme="streamlit",
                 )
             else:
-                st.dataframe(
-                    tdf,
-                    use_container_width=True,
-                    hide_index=True,
-                    height=height
-                )
-
+                st.warning("Excel-style filters need streamlit-aggrid. Showing normal table only.")
     def group_summary(group_cols, source_df=None):
         source_df = add_pending_qty(source_df if source_df is not None else df)
         group_cols = [c for c in group_cols if c in source_df.columns]
@@ -1050,58 +1063,65 @@ with tab2:
             parsed = p1.fillna(p2)
             f2_display[dc] = parsed.dt.strftime("%d-%m-%Y").where(parsed.notna(), f2_display[dc].astype(str))
 
-    # Excel-style table with filters directly in column headers
-    # Users can click the filter icon / type in the header filter box for each column.
-    if AgGrid is not None:
-        gb = GridOptionsBuilder.from_dataframe(f2_display)
-        gb.configure_default_column(
-            sortable=True,
-            filter=True,
-            resizable=True,
-            floatingFilter=True,
-            editable=False,
-            wrapText=False,
-            autoHeight=False,
-        )
-        for nc in ["PO Value", "Net Price", "PO Quantity", "GR Qty", "Still to be del.", "Still to be inv.", "To be inv."]:
-            if nc in f2_display.columns:
-                gb.configure_column(nc, type=["numericColumn"], filter="agNumberColumnFilter")
-        grid_options = gb.build()
-        grid_options["pagination"] = True
-        grid_options["paginationPageSize"] = 100
-        grid_options["enableCellTextSelection"] = True
-        grid_options["sideBar"] = {
-            "toolPanels": ["columns", "filters"],
-            "defaultToolPanel": ""
+    # First view: normal readable table
+    st.dataframe(
+        f2_display.head(100),
+        use_container_width=True,
+        height=520,
+        hide_index=True,
+        column_config={
+            "PO Value":        st.column_config.NumberColumn("PO Value",        format="%.2f"),
+            "Net Price":       st.column_config.NumberColumn("Net Price",        format="%.2f"),
+            "PO Quantity":     st.column_config.NumberColumn("PO Quantity",      format="%.3f"),
+            "GR Qty":          st.column_config.NumberColumn("GR Qty",           format="%.3f"),
+            "Still to be del.":st.column_config.NumberColumn("Still to be del.", format="%.3f"),
+            "Still to be inv.":st.column_config.NumberColumn("Still to be inv.", format="%.3f"),
+            "To be inv.":      st.column_config.NumberColumn("To be inv.",       format="%.3f"),
         }
-        AgGrid(
-            f2_display,
-            gridOptions=grid_options,
-            height=560,
-            width="100%",
-            fit_columns_on_grid_load=False,
-            allow_unsafe_jscode=True,
-            enable_enterprise_modules=False,
-            update_mode=GridUpdateMode.NO_UPDATE,
-            theme="alpine",
-        )
-    else:
-        st.warning("Excel-style column filters need the streamlit-aggrid package. Add streamlit-aggrid to requirements.txt and redeploy. Showing normal table for now.")
-        st.dataframe(
-            f2_display,
-            use_container_width=True,
-            height=520,
-            hide_index=True,
-            column_config={
-                "PO Value":        st.column_config.NumberColumn("PO Value",        format="%.2f"),
-                "Net Price":       st.column_config.NumberColumn("Net Price",        format="%.2f"),
-                "PO Quantity":     st.column_config.NumberColumn("PO Quantity",      format="%.3f"),
-                "GR Qty":          st.column_config.NumberColumn("GR Qty",           format="%.3f"),
-                "Still to be del.":st.column_config.NumberColumn("Still to be del.", format="%.3f"),
-                "Still to be inv.":st.column_config.NumberColumn("Still to be inv.", format="%.3f"),
-                "To be inv.":      st.column_config.NumberColumn("To be inv.",       format="%.3f"),
+    )
+
+    show_excel_explorer = st.checkbox(
+        "Show Advanced Excel Filter View",
+        value=False,
+        key=f"explorer_excel_{len(f2_display)}"
+    )
+
+    if show_excel_explorer:
+        if AgGrid is not None:
+            gb = GridOptionsBuilder.from_dataframe(f2_display)
+            gb.configure_default_column(
+                sortable=True,
+                filter=True,
+                resizable=True,
+                floatingFilter=True,
+                editable=False,
+                wrapText=False,
+                autoHeight=False,
+            )
+            for nc in ["PO Value", "Net Price", "PO Quantity", "GR Qty", "Still to be del.", "Still to be inv.", "To be inv."]:
+                if nc in f2_display.columns:
+                    gb.configure_column(nc, type=["numericColumn"], filter="agNumberColumnFilter")
+            grid_options = gb.build()
+            grid_options["pagination"] = True
+            grid_options["paginationPageSize"] = 100
+            grid_options["enableCellTextSelection"] = True
+            grid_options["sideBar"] = {
+                "toolPanels": ["columns", "filters"],
+                "defaultToolPanel": ""
             }
-        )
+            AgGrid(
+                f2_display,
+                gridOptions=grid_options,
+                height=560,
+                width="100%",
+                fit_columns_on_grid_load=False,
+                allow_unsafe_jscode=True,
+                enable_enterprise_modules=False,
+                update_mode=GridUpdateMode.NO_UPDATE if GridUpdateMode is not None else None,
+                theme="streamlit",
+            )
+        else:
+            st.warning("Excel-style column filters need the streamlit-aggrid package. Add streamlit-aggrid to requirements.txt and redeploy.")
     csv2 = f2.to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Download CSV", csv2, "ME2J_EXPLORER.csv", "text/csv", key="dl_exp")
 
