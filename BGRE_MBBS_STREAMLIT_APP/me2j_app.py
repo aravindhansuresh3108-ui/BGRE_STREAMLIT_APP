@@ -371,9 +371,12 @@ def show_popup(title, df):
         if "GR Qty" in ddf.columns:
             ddf["GR Qty"] = pd.to_numeric(ddf["GR Qty"], errors="coerce").fillna(0)
         if "PO Quantity" in ddf.columns and "GR Qty" in ddf.columns:
-            ddf["Pending Qty"] = (ddf["PO Quantity"] - ddf["GR Qty"]).clip(lower=0).round(3)
+            diff = ddf["PO Quantity"] - ddf["GR Qty"]
+            ddf["Pending Qty"] = diff.clip(lower=0).round(3)
+            ddf["Extra Receipt Qty"] = (-diff).clip(lower=0).round(3)
         elif "Still to be del." in ddf.columns:
             ddf["Pending Qty"] = pd.to_numeric(ddf["Still to be del."], errors="coerce").fillna(0).clip(lower=0).round(3)
+            ddf["Extra Receipt Qty"] = 0
         return ddf
 
     def money_by_currency(g):
@@ -392,14 +395,14 @@ def show_popup(title, df):
         cols = extra_cols + [
             "Release Status", "PurchDoc", "Item", "Project", "Vendor/Supplying plant", "Vendor Name",
             "Short Text", "Material Description", "Order Unit", "PO Quantity", "GR Qty", "Pending Qty",
-            "Crcy", "PO Value", "PO Date", "Del Date", "Plant", "Matl Group"
+            "Extra Receipt Qty", "Crcy", "PO Value", "PO Date", "Del Date", "Plant", "Matl Group"
         ]
         cols = [c for c in cols if c in ddf.columns]
         out = ddf[cols].copy()
         for dc in ["PO Date", "Del Date"]:
             if dc in out.columns:
                 out[dc] = fmt_date(out[dc])
-        for qc in ["PO Quantity", "GR Qty", "Pending Qty", "Still to be del."]:
+        for qc in ["PO Quantity", "GR Qty", "Pending Qty", "Extra Receipt Qty", "Still to be del."]:
             if qc in out.columns:
                 out[qc] = pd.to_numeric(out[qc], errors="coerce").round(3)
         for vc in ["PO Value", "Net Price"]:
@@ -491,8 +494,14 @@ def show_popup(title, df):
                 row["PO Quantity"] = round(float(g["PO Quantity"].sum()), 3)
             if "GR Qty" in g.columns:
                 row["GR Qty"] = round(float(g["GR Qty"].sum()), 3)
-            if "Pending Qty" in g.columns:
+            if "PO Quantity" in g.columns and "GR Qty" in g.columns:
+                po_sum = float(g["PO Quantity"].sum())
+                gr_sum = float(g["GR Qty"].sum())
+                row["Pending Qty"] = round(max(po_sum - gr_sum, 0), 3)
+                row["Extra Receipt Qty"] = round(max(gr_sum - po_sum, 0), 3)
+            elif "Pending Qty" in g.columns:
                 row["Pending Qty"] = round(float(g["Pending Qty"].sum()), 3)
+                row["Extra Receipt Qty"] = 0
             row.update(money_by_currency(g))
             rows.append(row)
         out = pd.DataFrame(rows)
@@ -514,7 +523,7 @@ def show_popup(title, df):
     # 2. Vendors: vendor-wise project/PO/qty/value breakdown
     elif "Vendor" in title and ("Vendors" in title or "vendor" in title.lower()):
         summary = group_summary(["Vendor/Supplying plant", "Vendor Name"])
-        show_table(summary, "Vendor-wise PO, project, quantity, GR and pending breakdown", height=360)
+        show_table(summary, "Vendor-wise PO, project, quantity, GR, pending and extra receipt breakdown", height=360)
         st.markdown("##### Vendor PO Line Details")
         show_table(base_detail(df).sort_values("Vendor Name") if "Vendor Name" in df.columns else base_detail(df), height=420)
 
@@ -523,7 +532,7 @@ def show_popup(title, df):
         summary = group_summary([uu])
         if "PO Quantity" in summary.columns:
             summary = summary[summary["PO Quantity"] > 0]
-        show_table(summary, "UOM-wise PO quantity with GR and pending", height=320)
+        show_table(summary, "UOM-wise PO quantity with GR, pending and extra receipt", height=320)
         st.markdown("##### PO Quantity Line Details")
         detail = base_detail(df)
         if "PO Quantity" in detail.columns:
@@ -545,7 +554,7 @@ def show_popup(title, df):
         summary = group_summary([uu])
         if "GR Qty" in summary.columns:
             summary = summary[summary["GR Qty"] > 0]
-        show_table(summary, "UOM-wise received quantity with PO and pending", height=320)
+        show_table(summary, "UOM-wise received quantity with PO, pending and extra receipt", height=320)
         st.markdown("##### GR Quantity Line Details")
         detail = base_detail(df)
         if "GR Qty" in detail.columns:
@@ -558,7 +567,7 @@ def show_popup(title, df):
         summary = group_summary([uu], dfx)
         if "Pending Qty" in summary.columns:
             summary = summary[summary["Pending Qty"] > 0]
-        show_table(summary, "UOM-wise pending delivery with PO and GR", height=320)
+        show_table(summary, "UOM-wise pending delivery with PO, GR and extra receipt", height=320)
         st.markdown("##### Pending PO Line Details")
         detail = base_detail(dfx)
         if "Pending Qty" in detail.columns:
@@ -569,7 +578,7 @@ def show_popup(title, df):
     elif "Project" in title:
         dfx = df[df["Project"].astype(str).str.strip().replace("", pd.NA).notna()].copy() if "Project" in df.columns else df.copy()
         summary = group_summary(["Project", "Vendor/Supplying plant", "Vendor Name"], dfx)
-        show_table(summary, "Project-wise vendor, PO, PO Qty, GR Qty, Pending Qty and value", height=420)
+        show_table(summary, "Project-wise vendor, PO, PO Qty, GR Qty, Pending Qty, Extra Receipt Qty and value", height=420)
         st.markdown("##### Project PO Line Details")
         detail = base_detail(dfx)
         if "Project" in detail.columns:
@@ -579,7 +588,7 @@ def show_popup(title, df):
     # 8. Material Groups
     elif "Material Group" in title:
         summary = group_summary(["Matl Group", "Vendor Name"])
-        show_table(summary, "Material group + vendor breakdown with PO/GR/pending", height=400)
+        show_table(summary, "Material group + vendor breakdown with PO/GR/pending/extra receipt", height=400)
         st.markdown("##### Material Group PO Line Details")
         detail = base_detail(df)
         if "Matl Group" in detail.columns:
@@ -595,7 +604,7 @@ def show_popup(title, df):
         rel_col = "Rel Bucket" if "Rel Bucket" in rel_df.columns else "Release Status"
         summary = group_summary([rel_col], rel_df)
         summary = summary.rename(columns={rel_col: "Release Status"})
-        show_table(summary, "Released vs not released PO count with PO/GR/pending", height=260)
+        show_table(summary, "Released vs not released PO count with PO/GR/pending/extra receipt", height=260)
         st.markdown("##### Release Status PO Line Details")
         detail = base_detail(rel_df, extra_cols=[rel_col])
         if rel_col in detail.columns:
