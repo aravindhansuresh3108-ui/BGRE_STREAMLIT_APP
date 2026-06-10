@@ -5,6 +5,14 @@ import pandas as pd
 import plotly.express as px
 import snowflake.connector
 
+# Optional: Excel-style table filters for Data Explorer
+try:
+    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+except Exception:
+    AgGrid = None
+    GridOptionsBuilder = None
+    GridUpdateMode = None
+
 st.set_page_config(page_title="ME2J Procurement Dashboard", page_icon="📊", layout="wide")
 
 conn = snowflake.connector.connect(
@@ -921,24 +929,6 @@ with tab2:
                 mask = mask | f2[col].astype(str).str.lower().str.contains(kw, na=False)
         f2 = f2[mask]
 
-    # Column-wise filters for final table / Data Explorer
-    with st.expander("🔎 Column-wise filters", expanded=False):
-        filter_cols = st.multiselect(
-            "Select columns to filter",
-            options=list(f2.columns),
-            default=[],
-            key="t2_filter_cols",
-            placeholder="Choose columns"
-        )
-        if filter_cols:
-            for i in range(0, len(filter_cols), 3):
-                cols = st.columns(3)
-                for j, col_name in enumerate(filter_cols[i:i+3]):
-                    with cols[j]:
-                        val = st.text_input(f"Filter {col_name}", key=f"t2_col_filter_{col_name}")
-                    if val.strip():
-                        f2 = f2[f2[col_name].astype(str).str.contains(val.strip(), case=False, na=False)]
-
     st.caption(f"Showing {len(f2):,} of {len(df2):,} records")
 
     # Excel-style filterable table
@@ -957,21 +947,58 @@ with tab2:
             parsed = p1.fillna(p2)
             f2_display[dc] = parsed.dt.strftime("%d-%m-%Y").where(parsed.notna(), f2_display[dc].astype(str))
 
-    st.dataframe(
-        f2_display,
-        use_container_width=True,
-        height=520,
-        hide_index=True,
-        column_config={
-            "PO Value":        st.column_config.NumberColumn("PO Value",        format="%.2f"),
-            "Net Price":       st.column_config.NumberColumn("Net Price",        format="%.2f"),
-            "PO Quantity":     st.column_config.NumberColumn("PO Quantity",      format="%.3f"),
-            "GR Qty":          st.column_config.NumberColumn("GR Qty",           format="%.3f"),
-            "Still to be del.":st.column_config.NumberColumn("Still to be del.", format="%.3f"),
-            "Still to be inv.":st.column_config.NumberColumn("Still to be inv.", format="%.3f"),
-            "To be inv.":      st.column_config.NumberColumn("To be inv.",       format="%.3f"),
+    # Excel-style table with filters directly in column headers
+    # Users can click the filter icon / type in the header filter box for each column.
+    if AgGrid is not None:
+        gb = GridOptionsBuilder.from_dataframe(f2_display)
+        gb.configure_default_column(
+            sortable=True,
+            filter=True,
+            resizable=True,
+            floatingFilter=True,
+            editable=False,
+            wrapText=False,
+            autoHeight=False,
+        )
+        for nc in ["PO Value", "Net Price", "PO Quantity", "GR Qty", "Still to be del.", "Still to be inv.", "To be inv."]:
+            if nc in f2_display.columns:
+                gb.configure_column(nc, type=["numericColumn"], filter="agNumberColumnFilter")
+        grid_options = gb.build()
+        grid_options["pagination"] = True
+        grid_options["paginationPageSize"] = 100
+        grid_options["enableCellTextSelection"] = True
+        grid_options["sideBar"] = {
+            "toolPanels": ["columns", "filters"],
+            "defaultToolPanel": ""
         }
-    )
+        AgGrid(
+            f2_display,
+            gridOptions=grid_options,
+            height=560,
+            width="100%",
+            fit_columns_on_grid_load=False,
+            allow_unsafe_jscode=True,
+            enable_enterprise_modules=False,
+            update_mode=GridUpdateMode.NO_UPDATE,
+            theme="alpine",
+        )
+    else:
+        st.warning("Excel-style column filters need the streamlit-aggrid package. Add streamlit-aggrid to requirements.txt and redeploy. Showing normal table for now.")
+        st.dataframe(
+            f2_display,
+            use_container_width=True,
+            height=520,
+            hide_index=True,
+            column_config={
+                "PO Value":        st.column_config.NumberColumn("PO Value",        format="%.2f"),
+                "Net Price":       st.column_config.NumberColumn("Net Price",        format="%.2f"),
+                "PO Quantity":     st.column_config.NumberColumn("PO Quantity",      format="%.3f"),
+                "GR Qty":          st.column_config.NumberColumn("GR Qty",           format="%.3f"),
+                "Still to be del.":st.column_config.NumberColumn("Still to be del.", format="%.3f"),
+                "Still to be inv.":st.column_config.NumberColumn("Still to be inv.", format="%.3f"),
+                "To be inv.":      st.column_config.NumberColumn("To be inv.",       format="%.3f"),
+            }
+        )
     csv2 = f2.to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Download CSV", csv2, "ME2J_EXPLORER.csv", "text/csv", key="dl_exp")
 
