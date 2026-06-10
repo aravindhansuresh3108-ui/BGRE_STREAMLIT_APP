@@ -395,22 +395,52 @@ def show_popup(title, df):
         return out
 
     def show_table(tdf, caption="", height=360):
-        if caption:
-            st.caption(caption)
-        tdf = tdf.copy()
-        if len(tdf) == 0:
-            st.info("No records available for this selection.")
-            return
+    if caption:
+        st.caption(caption)
+
+    tdf = tdf.copy()
+
+    if len(tdf) == 0:
+        st.info("No records available for this selection.")
+        return
+
+    # 1) First show normal readable table for client
+    st.dataframe(
+        tdf.head(50),
+        use_container_width=True,
+        hide_index=True,
+        height=min(320, 70 + len(tdf.head(50)) * 35)
+    )
+
+    # 2) Advanced Excel filter view only if user opens it
+    with st.expander("Advanced Excel Filter View"):
         if AgGrid is not None:
             gb = GridOptionsBuilder.from_dataframe(tdf)
-            gb.configure_default_column(filter=True, sortable=True, resizable=True, floatingFilter=True)
-            for nc in ["PO Count", "Vendor Count", "Project Count", "PO Quantity", "GR Qty", "Pending Qty", "PO Value", "PO Value INR", "PO Value USD", "Net Price"]:
+
+            gb.configure_default_column(
+                filter=True,
+                sortable=True,
+                resizable=True,
+                floatingFilter=True
+            )
+
+            for nc in [
+                "PO Count", "Vendor Count", "Project Count",
+                "PO Quantity", "GR Qty", "Pending Qty",
+                "PO Value", "PO Value INR", "PO Value USD", "Net Price"
+            ]:
                 if nc in tdf.columns:
-                    gb.configure_column(nc, type=["numericColumn"], filter="agNumberColumnFilter")
+                    gb.configure_column(
+                        nc,
+                        type=["numericColumn"],
+                        filter="agNumberColumnFilter"
+                    )
+
             opts = gb.build()
             opts["pagination"] = True
             opts["paginationPageSize"] = 25
             opts["enableCellTextSelection"] = True
+
             AgGrid(
                 tdf,
                 gridOptions=opts,
@@ -422,7 +452,12 @@ def show_popup(title, df):
                 theme="alpine",
             )
         else:
-            st.dataframe(tdf, use_container_width=True, hide_index=True, height=height)
+            st.dataframe(
+                tdf,
+                use_container_width=True,
+                hide_index=True,
+                height=height
+            )
 
     def group_summary(group_cols, source_df=None):
         source_df = add_pending_qty(source_df if source_df is not None else df)
