@@ -357,19 +357,28 @@ def get_val(ev, field):
 @st.dialog("Drilldown Details", width="large")
 def show_popup(title, df):
     st.markdown(f"### {title}")
-    pv = "PO Value" if "PO Value" in df.columns else "POH"
-    uu = "Order Unit" if "Order Unit" in df.columns else "UOM"
+
+    pv = "PO Value" if "PO Value" in df.columns else ("POH" if "POH" in df.columns else None)
+    uu = "Order Unit" if "Order Unit" in df.columns else ("UOM" if "UOM" in df.columns else None)
+
+    # ------------------------------------------------------------------
+    # Client expectation rule:
+    # KPI card count and top drilldown table must be at the SAME business level.
+    # Example: No. of Projects = 38, so project drilldown top table = 38 rows.
+    # Full line-item details are not shown as the main table because it creates confusion.
+    # ------------------------------------------------------------------
 
     def fmt_date(series):
-        return (pd.to_datetime(series, errors="coerce", dayfirst=True)
-                .dt.strftime("%d-%m-%Y").fillna("-"))
+        parsed1 = pd.to_datetime(series, errors="coerce", dayfirst=True)
+        parsed2 = pd.to_datetime(series, errors="coerce")
+        parsed = parsed1.fillna(parsed2)
+        return parsed.dt.strftime("%d-%m-%Y").where(parsed.notna(), series.astype(str)).replace({"NaT":"-", "None":"-", "nan":"-", "NaN":"-"}).fillna("-")
 
-    def add_pending_qty(ddf):
+    def prep_df(ddf):
         ddf = ddf.copy()
-        if "PO Quantity" in ddf.columns:
-            ddf["PO Quantity"] = pd.to_numeric(ddf["PO Quantity"], errors="coerce").fillna(0)
-        if "GR Qty" in ddf.columns:
-            ddf["GR Qty"] = pd.to_numeric(ddf["GR Qty"], errors="coerce").fillna(0)
+        for c in ["PO Quantity", "GR Qty", "Still to be del.", "Still to be inv.", "To be inv.", "PO Value", "Net Price"]:
+            if c in ddf.columns:
+                ddf[c] = pd.to_numeric(ddf[c], errors="coerce").fillna(0)
         if "PO Quantity" in ddf.columns and "GR Qty" in ddf.columns:
             diff = ddf["PO Quantity"] - ddf["GR Qty"]
             ddf["Pending Qty"] = diff.clip(lower=0).round(3)
@@ -377,92 +386,156 @@ def show_popup(title, df):
         elif "Still to be del." in ddf.columns:
             ddf["Pending Qty"] = pd.to_numeric(ddf["Still to be del."], errors="coerce").fillna(0).clip(lower=0).round(3)
             ddf["Extra Receipt Qty"] = 0
+        else:
+            ddf["Pending Qty"] = 0
+            ddf["Extra Receipt Qty"] = 0
         return ddf
 
-    def money_by_currency(g):
+    def add_release_bucket(ddf):
+        ddf = ddf.copy()
+        if "Release Status" in ddf.columns:
+            ddf["Release Bucket"] = ddf["Release Status"].astype(str).str.strip().str.upper().apply(
+                lambda x: "Released" if x == "R" else "Not Released"
+            )
+        return ddf
+
+    def money_cols(g):
         out = {}
-        if "Crcy" in g.columns and pv in g.columns:
-            vals = g.groupby("Crcy", dropna=False)[pv].sum()
+        if pv and pv in g.columns and "Crcy" in g.columns:
+            vals = g.groupby(g["Crcy"].astype(str).str.upper(), dropna=False)[pv].sum()
             out["PO Value INR"] = round(float(vals.get("INR", 0)), 2)
             out["PO Value USD"] = round(float(vals.get("USD", 0)), 2)
-        elif pv in g.columns:
-            out["PO Value"] = round(float(pd.to_numeric(g[pv], errors="coerce").fillna(0).sum()), 2)
+        elif pv and pv in g.columns:
+            out["PO Value"] = round(float(g[pv].sum()), 2)
         return out
 
-    def base_detail(ddf, extra_cols=None):
-        extra_cols = extra_cols or []
-        ddf = add_pending_qty(ddf)
-        cols = extra_cols + [
-            "Release Status", "PurchDoc", "Item", "Project", "Vendor/Supplying plant", "Vendor Name",
-            "Short Text", "Material Description", "Order Unit", "PO Quantity", "GR Qty", "Pending Qty",
-            "Extra Receipt Qty", "Crcy", "PO Value", "PO Date", "Del Date", "Plant", "Matl Group"
+    def business_summary(group_cols, source_df=None):
+        source_df = prep_df(source_df if source_df is not None else df)
+        group_cols = [c for c in group_cols if c in source_df.columns]
+        if not group_cols:
+            return pd.DataFrame()
+
+        rows = []
+        for keys, g in source_df.groupby(group_cols, dropna=False):
+            if not isinstance(keys, tuple):
+                keys = (keys,)
+            row = {col: val for col, val in zip(group_cols, keys)}
+            row["PO Count"] = int(g["PurchDoc"].nunique()) if "PurchDoc" in g.columns else int(len(g))
+            if "Vendor/Supplying plant" in g.columns:
+                row["Vendor Count"] = int(g["Vendor/Supplying plant"].nunique())
+            if "Project" in g.columns:
+                row["Project Count"] = int(g["Project"].astype(str).str.strip().replace("", pd.NA).dropna().nunique())
+            if "Matl Group" in g.columns:
+                row["Material Group Count"] = int(g["Matl Group"].astype(str).str.strip().replace("", pd.NA).dropna().nunique())
+            if "PO Quantity" in g.columns:
+                row["PO Quantity"] = round(float(g["PO Quantity"].sum()), 3)
+            if "GR Qty" in g.columns:
+                row["GR Qty"] = round(float(g["GR Qty"].sum()), 3)
+            if "Pending Qty" in g.columns:
+                row["Pending Qty"] = round(float(g["Pending Qty"].sum()), 3)
+            if "Extra Receipt Qty" in g.columns:
+                row["Extra Receipt Qty"] = round(float(g["Extra Receipt Qty"].sum()), 3)
+            row.update(money_cols(g))
+            rows.append(row)
+
+        out = pd.DataFrame(rows)
+        sort_col = "PO Value INR" if "PO Value INR" in out.columns else ("PO Value" if "PO Value" in out.columns else "PO Count")
+        return out.sort_values(sort_col, ascending=False).reset_index(drop=True)
+
+    def po_level_details(source_df, extra_group_cols=None):
+        source_df = prep_df(source_df)
+        extra_group_cols = extra_group_cols or []
+        base_cols = extra_group_cols + [
+            "PurchDoc", "Vendor/Supplying plant", "Vendor Name", "Project", "PO Date", "Plant", "POrg", "Doc Type", "Release Status", "Release Bucket"
         ]
-        cols = [c for c in cols if c in ddf.columns]
-        out = ddf[cols].copy()
+        group_cols = []
+        for c in base_cols:
+            if c in source_df.columns and c not in group_cols:
+                group_cols.append(c)
+
+        if "PurchDoc" not in group_cols:
+            return pd.DataFrame()
+
+        rows = []
+        for keys, g in source_df.groupby(group_cols, dropna=False):
+            if not isinstance(keys, tuple):
+                keys = (keys,)
+            row = {col: val for col, val in zip(group_cols, keys)}
+            row["Line Item Count"] = int(g["Item"].nunique()) if "Item" in g.columns else int(len(g))
+            if "PO Quantity" in g.columns:
+                row["PO Quantity"] = round(float(g["PO Quantity"].sum()), 3)
+            if "GR Qty" in g.columns:
+                row["GR Qty"] = round(float(g["GR Qty"].sum()), 3)
+            if "Pending Qty" in g.columns:
+                row["Pending Qty"] = round(float(g["Pending Qty"].sum()), 3)
+            if "Extra Receipt Qty" in g.columns:
+                row["Extra Receipt Qty"] = round(float(g["Extra Receipt Qty"].sum()), 3)
+            row.update(money_cols(g))
+            rows.append(row)
+        out = pd.DataFrame(rows)
+        if "PO Date" in out.columns:
+            out["PO Date"] = fmt_date(out["PO Date"])
+        sort_cols = [c for c in extra_group_cols + ["PurchDoc"] if c in out.columns]
+        if sort_cols:
+            out = out.sort_values(sort_cols, ascending=True, na_position="last")
+        return out.reset_index(drop=True)
+
+    def line_item_details(source_df, extra_cols=None):
+        source_df = prep_df(source_df)
+        extra_cols = extra_cols or []
+        cols = extra_cols + [
+            "PurchDoc", "Item", "Project", "Vendor/Supplying plant", "Vendor Name", "Short Text",
+            "Material Code", "Material Description", "Order Unit", "PO Quantity", "GR Qty",
+            "Pending Qty", "Extra Receipt Qty", "Crcy", "PO Value", "PO Date", "Del Date",
+            "Plant", "Matl Group", "Release Status", "POrg", "Doc Type"
+        ]
+        cols = [c for c in cols if c in source_df.columns]
+        out = source_df[cols].copy()
         for dc in ["PO Date", "Del Date"]:
             if dc in out.columns:
                 out[dc] = fmt_date(out[dc])
-        for qc in ["PO Quantity", "GR Qty", "Pending Qty", "Extra Receipt Qty", "Still to be del."]:
+        for qc in ["PO Quantity", "GR Qty", "Pending Qty", "Extra Receipt Qty"]:
             if qc in out.columns:
                 out[qc] = pd.to_numeric(out[qc], errors="coerce").round(3)
         for vc in ["PO Value", "Net Price"]:
             if vc in out.columns:
                 out[vc] = pd.to_numeric(out[vc], errors="coerce").round(2)
-        return out
+        return out.reset_index(drop=True)
 
-    def show_table(tdf, caption="", height=360):
+    def show_table(tdf, caption="", height=360, max_preview_rows=None):
         if caption:
             st.caption(caption)
-
         tdf = tdf.copy()
-
         if len(tdf) == 0:
             st.info("No records available for this selection.")
             return
 
-        # First view: normal readable table for client review
-        preview_df = tdf.head(50)
+        # For client review, show all business-summary rows. Do not silently cut to 50.
+        preview_df = tdf if max_preview_rows is None else tdf.head(max_preview_rows)
+        st.caption(f"Rows shown: {len(preview_df):,} of {len(tdf):,}")
         st.dataframe(
             preview_df,
             use_container_width=True,
             hide_index=True,
-            height=min(320, 70 + len(preview_df) * 35)
+            height=min(height, 80 + max(1, min(len(preview_df), 14)) * 35)
         )
 
-        # Optional second view: Excel-style filter table
         show_excel = st.checkbox(
             "Show Advanced Excel Filter View",
             value=False,
             key=f"popup_excel_{caption}_{len(tdf)}_{height}"
         )
-
         if show_excel:
             if AgGrid is not None:
                 gb = GridOptionsBuilder.from_dataframe(tdf)
-                gb.configure_default_column(
-                    filter=True,
-                    sortable=True,
-                    resizable=True,
-                    floatingFilter=True
-                )
-
-                for nc in [
-                    "PO Count", "Vendor Count", "Project Count",
-                    "PO Quantity", "GR Qty", "Pending Qty",
-                    "PO Value", "PO Value INR", "PO Value USD", "Net Price"
-                ]:
+                gb.configure_default_column(filter=True, sortable=True, resizable=True, floatingFilter=True)
+                for nc in ["PO Count", "Vendor Count", "Project Count", "Material Group Count", "Line Item Count", "PO Quantity", "GR Qty", "Pending Qty", "Extra Receipt Qty", "PO Value", "PO Value INR", "PO Value USD", "Net Price"]:
                     if nc in tdf.columns:
-                        gb.configure_column(
-                            nc,
-                            type=["numericColumn"],
-                            filter="agNumberColumnFilter"
-                        )
-
+                        gb.configure_column(nc, type=["numericColumn"], filter="agNumberColumnFilter")
                 opts = gb.build()
                 opts["pagination"] = True
-                opts["paginationPageSize"] = 25
+                opts["paginationPageSize"] = 50
                 opts["enableCellTextSelection"] = True
-
                 AgGrid(
                     tdf,
                     gridOptions=opts,
@@ -475,155 +548,110 @@ def show_popup(title, df):
                 )
             else:
                 st.warning("Excel-style filters need streamlit-aggrid. Showing normal table only.")
-    def group_summary(group_cols, source_df=None):
-        source_df = add_pending_qty(source_df if source_df is not None else df)
-        group_cols = [c for c in group_cols if c in source_df.columns]
-        if not group_cols:
-            return pd.DataFrame()
-        rows = []
-        for keys, g in source_df.groupby(group_cols, dropna=False):
-            if not isinstance(keys, tuple):
-                keys = (keys,)
-            row = {col: val for col, val in zip(group_cols, keys)}
-            row["PO Count"] = int(g["PurchDoc"].nunique()) if "PurchDoc" in g.columns else len(g)
-            if "Vendor/Supplying plant" in g.columns:
-                row["Vendor Count"] = int(g["Vendor/Supplying plant"].nunique())
-            if "Project" in g.columns:
-                row["Project Count"] = int(g["Project"].astype(str).str.strip().replace("", pd.NA).dropna().nunique())
-            if "PO Quantity" in g.columns:
-                row["PO Quantity"] = round(float(g["PO Quantity"].sum()), 3)
-            if "GR Qty" in g.columns:
-                row["GR Qty"] = round(float(g["GR Qty"].sum()), 3)
-            if "PO Quantity" in g.columns and "GR Qty" in g.columns:
-                po_sum = float(g["PO Quantity"].sum())
-                gr_sum = float(g["GR Qty"].sum())
-                row["Pending Qty"] = round(max(po_sum - gr_sum, 0), 3)
-                row["Extra Receipt Qty"] = round(max(gr_sum - po_sum, 0), 3)
-            elif "Pending Qty" in g.columns:
-                row["Pending Qty"] = round(float(g["Pending Qty"].sum()), 3)
-                row["Extra Receipt Qty"] = 0
-            row.update(money_by_currency(g))
-            rows.append(row)
-        out = pd.DataFrame(rows)
-        sort_col = "PO Value INR" if "PO Value INR" in out.columns else ("PO Value" if "PO Value" in out.columns else "PO Count")
-        return out.sort_values(sort_col, ascending=False)
+
+    df = prep_df(df)
 
     st.markdown("##### Summary Breakdown")
 
-    # 1. Total POs: show useful breakdown first, then PO line details
+    # 1. Total POs: card count is distinct PO count, so top table is one row per PO.
     if "Total POs" in title:
-        by_cols = [c for c in ["POrg", "Plant", "Project"] if c in df.columns]
-        summary = group_summary(by_cols[:2] if len(by_cols) >= 2 else by_cols)
-        if summary.empty:
-            summary = pd.DataFrame({"Metric": ["Total POs"], "PO Count": [df["PurchDoc"].nunique() if "PurchDoc" in df.columns else len(df)]})
-        show_table(summary, "PO count/value/quantity breakdown", height=300)
-        st.markdown("##### PO Line Details")
-        show_table(base_detail(df).sort_values("PO Value", ascending=False) if "PO Value" in df.columns else base_detail(df), height=420)
+        summary = business_summary(["POrg"] if "POrg" in df.columns else ["Plant"] if "Plant" in df.columns else [])
+        if not summary.empty:
+            show_table(summary, "Purchase-org / plant level summary for the selected data.", height=300)
+        st.markdown("##### PO Level Details")
+        po_df = po_level_details(df)
+        show_table(po_df, "One row per Purchase Document. This matches the Total POs card logic.", height=440)
 
-    # 2. Vendors: vendor-wise project/PO/qty/value breakdown
+    # 2. Vendors: card count is distinct vendor count, so top table is one row per vendor.
     elif "Vendor" in title and ("Vendors" in title or "vendor" in title.lower()):
-        summary = group_summary(["Vendor/Supplying plant", "Vendor Name"])
-        show_table(summary, "Vendor-wise PO, project, quantity, GR, pending and extra receipt breakdown", height=360)
-        st.markdown("##### Vendor PO Line Details")
-        show_table(base_detail(df).sort_values("Vendor Name") if "Vendor Name" in df.columns else base_detail(df), height=420)
+        vendor_cols = [c for c in ["Vendor/Supplying plant", "Vendor Name"] if c in df.columns]
+        summary = business_summary(vendor_cols)
+        show_table(summary, "One row per vendor matching the Total Vendors card.", height=420)
+        st.markdown("##### Vendor-wise PO Level Details")
+        po_df = po_level_details(df, extra_group_cols=vendor_cols)
+        show_table(po_df, "Related PO-level records by vendor.", height=440, max_preview_rows=300)
 
-    # 3. PO Quantity by UOM
+    # 3. PO Quantity by UOM: card is UOM split, so top table is one row per UOM.
     elif "PO Quantity" in title:
-        summary = group_summary([uu])
+        summary = business_summary([uu], df) if uu else pd.DataFrame()
         if "PO Quantity" in summary.columns:
             summary = summary[summary["PO Quantity"] > 0]
-        show_table(summary, "UOM-wise PO quantity with GR, pending and extra receipt", height=320)
-        st.markdown("##### PO Quantity Line Details")
-        detail = base_detail(df)
-        if "PO Quantity" in detail.columns:
-            detail = detail[detail["PO Quantity"] > 0].sort_values("PO Quantity", ascending=False)
-        show_table(detail, height=420)
+        show_table(summary, "One row per UOM matching the PO Quantity by UOM card.", height=360)
+        st.markdown("##### UOM-wise PO Level Details")
+        po_df = po_level_details(df[df["PO Quantity"] > 0] if "PO Quantity" in df.columns else df, extra_group_cols=[uu] if uu else [])
+        show_table(po_df, "Related PO-level records for selected UOM quantities.", height=440, max_preview_rows=300)
 
-    # 4. PO Value by Currency
+    # 4. PO Value by Currency: card is currency split, so top table is one row per currency.
     elif "PO Value" in title or "Currency" in title:
-        summary = group_summary(["Crcy"])
-        show_table(summary, "Currency-wise PO value with related PO/quantity counts", height=280)
-        st.markdown("##### Currency PO Line Details")
-        detail = base_detail(df)
-        if "PO Value" in detail.columns:
-            detail = detail.sort_values("PO Value", ascending=False)
-        show_table(detail, height=420)
+        summary = business_summary(["Crcy"] if "Crcy" in df.columns else [])
+        show_table(summary, "One row per currency matching the PO Value by Currency card.", height=280)
+        st.markdown("##### Currency-wise PO Level Details")
+        po_df = po_level_details(df[df[pv] > 0] if pv and pv in df.columns else df, extra_group_cols=["Crcy"] if "Crcy" in df.columns else [])
+        show_table(po_df, "Related PO-level records by currency.", height=440, max_preview_rows=300)
 
-    # 5. GR Quantity by UOM
+    # 5. GR Quantity by UOM: card is UOM split, so top table is one row per UOM.
     elif "GR Quantity" in title:
-        summary = group_summary([uu])
+        summary = business_summary([uu], df) if uu else pd.DataFrame()
         if "GR Qty" in summary.columns:
             summary = summary[summary["GR Qty"] > 0]
-        show_table(summary, "UOM-wise received quantity with PO, pending and extra receipt", height=320)
-        st.markdown("##### GR Quantity Line Details")
-        detail = base_detail(df)
-        if "GR Qty" in detail.columns:
-            detail = detail[detail["GR Qty"] > 0].sort_values("GR Qty", ascending=False)
-        show_table(detail, height=420)
+        show_table(summary, "One row per UOM matching the GR Quantity by UOM card.", height=360)
+        st.markdown("##### GR UOM-wise PO Level Details")
+        po_df = po_level_details(df[df["GR Qty"] > 0] if "GR Qty" in df.columns else df, extra_group_cols=[uu] if uu else [])
+        show_table(po_df, "Related PO-level records with GR quantity.", height=440, max_preview_rows=300)
 
-    # 6. Pending Delivery by UOM
+    # 6. Pending Delivery by UOM: card is pending UOM split, so top table is one row per UOM.
     elif "Pending" in title:
-        dfx = add_pending_qty(df)
-        summary = group_summary([uu], dfx)
+        summary = business_summary([uu], df) if uu else pd.DataFrame()
         if "Pending Qty" in summary.columns:
             summary = summary[summary["Pending Qty"] > 0]
-        show_table(summary, "UOM-wise pending delivery with PO, GR and extra receipt", height=320)
-        st.markdown("##### Pending PO Line Details")
-        detail = base_detail(dfx)
-        if "Pending Qty" in detail.columns:
-            detail = detail[detail["Pending Qty"] > 0].sort_values("Pending Qty", ascending=False)
-        show_table(detail, height=420)
+        show_table(summary, "One row per UOM matching the Pending Delivery by UOM card.", height=360)
+        st.markdown("##### Pending PO Level Details")
+        po_df = po_level_details(df[df["Pending Qty"] > 0] if "Pending Qty" in df.columns else df, extra_group_cols=[uu] if uu else [])
+        show_table(po_df, "Related PO-level records with pending quantity.", height=440, max_preview_rows=300)
 
-    # 7. Projects: project + vendor-wise details requested by client
+    # 7. Projects: card count is distinct projects, so top table is one row per project.
     elif "Project" in title:
         dfx = df[df["Project"].astype(str).str.strip().replace("", pd.NA).notna()].copy() if "Project" in df.columns else df.copy()
-        summary = group_summary(["Project", "Vendor/Supplying plant", "Vendor Name"], dfx)
-        show_table(summary, "Project-wise vendor, PO, PO Qty, GR Qty, Pending Qty, Extra Receipt Qty and value", height=420)
-        st.markdown("##### Project PO Line Details")
-        detail = base_detail(dfx)
-        if "Project" in detail.columns:
-            detail = detail.sort_values(["Project", "Vendor Name", "PurchDoc"], ascending=True, na_position="last") if "Vendor Name" in detail.columns and "PurchDoc" in detail.columns else detail
-        show_table(detail, height=440)
+        summary = business_summary(["Project"], dfx)
+        show_table(summary, "One row per project matching the No. of Projects card.", height=420)
+        st.markdown("##### Project-wise PO Level Details")
+        po_df = po_level_details(dfx, extra_group_cols=["Project"])
+        show_table(po_df, "Related PO-level records by project.", height=440, max_preview_rows=300)
 
-    # 8. Material Groups
+    # 8. Material Groups: card count is distinct material groups, so top table is one row per material group.
     elif "Material Group" in title:
-        summary = group_summary(["Matl Group", "Vendor Name"])
-        show_table(summary, "Material group + vendor breakdown with PO/GR/pending/extra receipt", height=400)
-        st.markdown("##### Material Group PO Line Details")
-        detail = base_detail(df)
-        if "Matl Group" in detail.columns:
-            detail = detail.sort_values(["Matl Group", "Vendor Name"], ascending=True, na_position="last") if "Vendor Name" in detail.columns else detail
-        show_table(detail, height=420)
+        dfx = df[df["Matl Group"].astype(str).str.strip().replace("", pd.NA).notna()].copy() if "Matl Group" in df.columns else df.copy()
+        summary = business_summary(["Matl Group"], dfx)
+        show_table(summary, "One row per material group matching the Material Groups card.", height=420)
+        st.markdown("##### Material Group-wise PO Level Details")
+        po_df = po_level_details(dfx, extra_group_cols=["Matl Group"])
+        show_table(po_df, "Related PO-level records by material group.", height=440, max_preview_rows=300)
 
-    # 9. Release Status: released/not released PO-wise details with PO/GR/Pending
+    # 9. Release Status: card count is Released/Not Released distinct PO count.
     elif "Release" in title:
-        rel_df = df.copy()
-        if "Rel Bucket" not in rel_df.columns and "Release Status" in rel_df.columns:
-            rel_df["Rel Bucket"] = rel_df["Release Status"].astype(str).str.strip().str.upper().map(
-                lambda x: "Released" if x == "R" else "Not Released")
-        rel_col = "Rel Bucket" if "Rel Bucket" in rel_df.columns else "Release Status"
-        summary = group_summary([rel_col], rel_df)
-        summary = summary.rename(columns={rel_col: "Release Status"})
-        show_table(summary, "Released vs not released PO count with PO/GR/pending/extra receipt", height=260)
-        st.markdown("##### Release Status PO Line Details")
-        detail = base_detail(rel_df, extra_cols=[rel_col])
-        if rel_col in detail.columns:
-            detail = detail.rename(columns={rel_col: "Release Bucket"})
-        if "PO Value" in detail.columns:
-            detail = detail.sort_values("PO Value", ascending=False)
-        show_table(detail, height=440)
+        rel_df = add_release_bucket(df)
+        summary = business_summary(["Release Bucket"], rel_df).rename(columns={"Release Bucket": "Release Status"})
+        show_table(
+            summary,
+            "Released means Release Status = R. M, L and blank are grouped as Not Released.",
+            height=260
+        )
+        st.markdown("##### Release Status PO Level Details")
+        po_df = po_level_details(rel_df, extra_group_cols=["Release Bucket"])
+        show_table(po_df, "One row per Purchase Document. This matches the Release Status card count.", height=440, max_preview_rows=536)
 
-    # Chart click drilldowns
+    # Chart click fallback: show business summary first, not raw full table first.
     else:
-        detail = base_detail(df)
-        if "PO Value" in detail.columns:
-            detail = detail.sort_values("PO Value", ascending=False)
-        show_table(detail, "Chart-selected records", height=440)
+        if "PurchDoc" in df.columns:
+            po_df = po_level_details(df)
+            show_table(po_df, "PO-level records for the selected chart item.", height=440, max_preview_rows=300)
+        else:
+            show_table(line_item_details(df), "Selected records.", height=440, max_preview_rows=300)
 
-    # Download always available
+    # Download selected data; this is full selected data, not only preview.
     csv = df.to_csv(index=False).encode("utf-8")
     safe = title[:15].replace(" ", "_")
-    st.download_button("⬇ Download", csv, f"ME2J_{safe}.csv", "text/csv",
+    st.download_button("⬇ Download Full Selected Data", csv, f"ME2J_{safe}.csv", "text/csv",
                        use_container_width=True, key=f"dl_pop_{safe}_{len(df)}")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
