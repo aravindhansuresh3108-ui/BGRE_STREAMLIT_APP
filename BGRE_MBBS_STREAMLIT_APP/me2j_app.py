@@ -448,14 +448,20 @@ def show_popup(title, df):
                 row["Project Count"] = int(clean_key_series(g["Project"]).dropna().nunique())
             if "Matl Group" in g.columns:
                 row["Material Group Count"] = int(clean_key_series(g["Matl Group"]).dropna().nunique())
+            po_sum = float(g["PO Quantity"].sum()) if "PO Quantity" in g.columns else 0.0
+            gr_sum = float(g["GR Qty"].sum()) if "GR Qty" in g.columns else 0.0
             if "PO Quantity" in g.columns:
-                row["PO Quantity"] = round(float(g["PO Quantity"].sum()), 3)
+                row["PO Quantity"] = round(po_sum, 3)
             if "GR Qty" in g.columns:
-                row["GR Qty"] = round(float(g["GR Qty"].sum()), 3)
-            if "Pending Qty" in g.columns:
-                row["Pending Qty"] = round(float(g["Pending Qty"].sum()), 3)
-            if "Extra Receipt Qty" in g.columns:
-                row["Extra Receipt Qty"] = round(float(g["Extra Receipt Qty"].sum()), 3)
+                row["GR Qty"] = round(gr_sum, 3)
+            # Client-confirmed summary logic: Pending is the net PO-GR balance at this displayed level.
+            # Example: PO Qty 107 and GR Qty 100 => Pending 7 and Extra Receipt 0.
+            if "PO Quantity" in g.columns and "GR Qty" in g.columns:
+                row["Pending Qty"] = round(max(po_sum - gr_sum, 0), 3)
+                row["Extra Receipt Qty"] = round(max(gr_sum - po_sum, 0), 3)
+            elif "Still to be del." in g.columns:
+                row["Pending Qty"] = round(float(g["Still to be del."].sum()), 3)
+                row["Extra Receipt Qty"] = 0
             row.update(money_agg(g))
             rows.append(row)
 
@@ -485,14 +491,20 @@ def show_popup(title, df):
                 row["Project Count"] = int(clean_key_series(g["Project"]).dropna().nunique())
             if "Matl Group" in g.columns:
                 row["Material Group Count"] = int(clean_key_series(g["Matl Group"]).dropna().nunique())
+            po_sum = float(g["PO Quantity"].sum()) if "PO Quantity" in g.columns else 0.0
+            gr_sum = float(g["GR Qty"].sum()) if "GR Qty" in g.columns else 0.0
             if "PO Quantity" in g.columns:
-                row["PO Quantity"] = round(float(g["PO Quantity"].sum()), 3)
+                row["PO Quantity"] = round(po_sum, 3)
             if "GR Qty" in g.columns:
-                row["GR Qty"] = round(float(g["GR Qty"].sum()), 3)
-            if "Pending Qty" in g.columns:
-                row["Pending Qty"] = round(float(g["Pending Qty"].sum()), 3)
-            if "Extra Receipt Qty" in g.columns:
-                row["Extra Receipt Qty"] = round(float(g["Extra Receipt Qty"].sum()), 3)
+                row["GR Qty"] = round(gr_sum, 3)
+            # Client-confirmed summary logic: Pending is the net PO-GR balance at this displayed level.
+            # Example: PO Qty 107 and GR Qty 100 => Pending 7 and Extra Receipt 0.
+            if "PO Quantity" in g.columns and "GR Qty" in g.columns:
+                row["Pending Qty"] = round(max(po_sum - gr_sum, 0), 3)
+                row["Extra Receipt Qty"] = round(max(gr_sum - po_sum, 0), 3)
+            elif "Still to be del." in g.columns:
+                row["Pending Qty"] = round(float(g["Still to be del."].sum()), 3)
+                row["Extra Receipt Qty"] = 0
             row.update(money_agg(g))
             rows.append(row)
 
@@ -624,16 +636,18 @@ def show_popup(title, df):
 
     # 6. Pending Delivery by UOM: first table one row per UOM; details only for selected UOM.
     elif "Pending" in title:
-        dfx = df[df["Pending Qty"] > 0].copy() if "Pending Qty" in df.columns else df.copy()
+        dfx = df.copy()
         summary = business_summary([uu], dfx) if uu else pd.DataFrame()
         if "Pending Qty" in summary.columns:
             summary = summary[summary["Pending Qty"] > 0]
-        show_table(summary, "One row per UOM matching the Pending Delivery by UOM card.", height=360)
+        show_table(summary, "One row per UOM where net Pending Qty is greater than 0. Pending = max(SUM(PO Qty) - SUM(GR Qty), 0).", height=360)
         if uu and len(summary) > 0:
             options = summary[uu].astype(str).tolist()
             sel = st.selectbox("Select UOM to view related pending PO records", options, key=f"pend_uom_sel_{len(summary)}")
             st.markdown("##### Selected Pending UOM PO Level Details")
             po_df = po_level(dfx[dfx[uu].astype(str) == str(sel)], keep_cols=[uu, "PO Date", "Vendor/Supplying plant", "Vendor Name", "Project", "Plant", "POrg", "Doc Type", "Release Status"])
+            if "Pending Qty" in po_df.columns:
+                po_df = po_df[po_df["Pending Qty"] > 0]
             show_table(po_df, f"Pending PO-level records for selected UOM: {sel}", height=420)
 
     # 7. Projects: No. of Projects card = distinct Project, so first table one row per project.
@@ -713,7 +727,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Ass
 # TAB 1 – DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.caption("VERSION: ME2J Client Pending Logic Fix - Line Level - 11 Jun 2026")
+    st.caption("VERSION: ME2J Client Summary Pending Fix - 11 Jun 2026")
     df_all = load_data()
     df_all = clean_numeric(df_all, ["PO Value","PO Quantity","GR Qty",
                                      "Still to be del.","Still to be inv.","Net Price"])
@@ -819,23 +833,13 @@ with tab1:
                if uom_col in fdf.columns and "GR Qty" in fdf.columns
                else pd.DataFrame(columns=[uom_col,"G"]))
 
-    # CLIENT LOGIC: Pending must be calculated at PO line level first, then aggregated.
-    # Line Pending = max(PO Quantity - GR Qty, 0)
-    # Line Extra Receipt = max(GR Qty - PO Quantity, 0)
-    # Do NOT calculate pending as SUM(PO Quantity) - SUM(GR Qty) at summary level.
-    pending_source_df = fdf.copy()
-    if qty_col in pending_source_df.columns and "GR Qty" in pending_source_df.columns:
-        _diff = pending_source_df[qty_col] - pending_source_df["GR Qty"]
-        pending_source_df["Pending Qty"] = _diff.clip(lower=0).round(3)
-        pending_source_df["Extra Receipt Qty"] = (-_diff).clip(lower=0).round(3)
-    else:
-        pending_source_df["Pending Qty"] = 0
-        pending_source_df["Extra Receipt Qty"] = 0
-
-    if uom_col in pending_source_df.columns:
-        pend_uom = (pending_source_df.groupby(uom_col, dropna=True)["Pending Qty"].sum()
-                    .reset_index(name="P").sort_values("P", ascending=False))
-        pend_uom = pend_uom[pend_uom["P"] > 0]
+    # FIX: Pending = PO Qty - GR Qty per UOM (no duplicate join issue)
+    if uom_col in fdf.columns and qty_col in fdf.columns and "GR Qty" in fdf.columns:
+        _po  = fdf.groupby(uom_col,dropna=True)[qty_col].sum()
+        _gr  = fdf.groupby(uom_col,dropna=True)["GR Qty"].sum()
+        pend_uom = (_po - _gr).clip(lower=0).reset_index()
+        pend_uom.columns = [uom_col, "P"]
+        pend_uom = pend_uom[pend_uom["P"] > 0].sort_values("P",ascending=False)
     else:
         pend_uom = pd.DataFrame(columns=[uom_col,"P"])
 
@@ -932,8 +936,7 @@ with tab1:
                  pend_lines[0] if pend_lines else "0",
                  sub_lines=pend_lines[1:] if len(pend_lines)>1 else None)
         if st.button("View Details", key="b_pend", use_container_width=True):
-            tpopup("Pending Delivery Quantity by UOM Drilldown",
-                   pending_source_df[pending_source_df["Pending Qty"] > 0].copy() if "Pending Qty" in pending_source_df.columns else fdf.iloc[0:0])
+            tpopup("Pending Delivery Quantity by UOM Drilldown", fdf.copy())
 
     # ROW 3
     c7,c8,c9 = st.columns(3)
