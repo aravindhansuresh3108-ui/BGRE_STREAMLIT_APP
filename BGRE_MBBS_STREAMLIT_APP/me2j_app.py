@@ -1233,6 +1233,35 @@ with tab3:
     STRICT_RULES = """You are a procurement data analyst for BGR Energy Systems.
 Answer ONLY from SNOWFLAKE_POC.ME2J_SCHEMA.ME2J_FINAL_REPORT.
 Do not guess, assume, or use outside knowledge.
+IMPORTANT NUMBER FORMAT RULES:
+
+For quantity fields:
+- PO Quantity
+- GR Qty
+- Pending Quantity
+- Extra Receipt Quantity
+- To be inv.
+- Still to be inv.
+- Still to be del.
+
+Always display values with 3 decimal places.
+
+Examples:
+107.000
+100.000
+7.000
+3876.065
+
+Do not round quantity values to 2 decimal places.
+
+For currency/value fields:
+- PO Value
+- Net Price
+
+Display with 2 decimal places.
+
+Use exact values returned from SQL results.
+Do not perform additional rounding in the narrative summary.
 
 AVAILABLE COLUMNS (29 total — use ONLY these):
 | Column               | Meaning                                          |
