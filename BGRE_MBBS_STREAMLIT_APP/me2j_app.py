@@ -713,7 +713,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Ass
 # TAB 1 – DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.caption("VERSION: ME2J Drilldown Client Expectation Fix - 11 Jun 2026")
+    st.caption("VERSION: ME2J Client Pending Logic Fix - Line Level - 11 Jun 2026")
     df_all = load_data()
     df_all = clean_numeric(df_all, ["PO Value","PO Quantity","GR Qty",
                                      "Still to be del.","Still to be inv.","Net Price"])
@@ -819,13 +819,23 @@ with tab1:
                if uom_col in fdf.columns and "GR Qty" in fdf.columns
                else pd.DataFrame(columns=[uom_col,"G"]))
 
-    # FIX: Pending = PO Qty - GR Qty per UOM (no duplicate join issue)
-    if uom_col in fdf.columns and qty_col in fdf.columns and "GR Qty" in fdf.columns:
-        _po  = fdf.groupby(uom_col,dropna=True)[qty_col].sum()
-        _gr  = fdf.groupby(uom_col,dropna=True)["GR Qty"].sum()
-        pend_uom = (_po - _gr).clip(lower=0).reset_index()
-        pend_uom.columns = [uom_col, "P"]
-        pend_uom = pend_uom[pend_uom["P"] > 0].sort_values("P",ascending=False)
+    # CLIENT LOGIC: Pending must be calculated at PO line level first, then aggregated.
+    # Line Pending = max(PO Quantity - GR Qty, 0)
+    # Line Extra Receipt = max(GR Qty - PO Quantity, 0)
+    # Do NOT calculate pending as SUM(PO Quantity) - SUM(GR Qty) at summary level.
+    pending_source_df = fdf.copy()
+    if qty_col in pending_source_df.columns and "GR Qty" in pending_source_df.columns:
+        _diff = pending_source_df[qty_col] - pending_source_df["GR Qty"]
+        pending_source_df["Pending Qty"] = _diff.clip(lower=0).round(3)
+        pending_source_df["Extra Receipt Qty"] = (-_diff).clip(lower=0).round(3)
+    else:
+        pending_source_df["Pending Qty"] = 0
+        pending_source_df["Extra Receipt Qty"] = 0
+
+    if uom_col in pending_source_df.columns:
+        pend_uom = (pending_source_df.groupby(uom_col, dropna=True)["Pending Qty"].sum()
+                    .reset_index(name="P").sort_values("P", ascending=False))
+        pend_uom = pend_uom[pend_uom["P"] > 0]
     else:
         pend_uom = pd.DataFrame(columns=[uom_col,"P"])
 
@@ -923,7 +933,7 @@ with tab1:
                  sub_lines=pend_lines[1:] if len(pend_lines)>1 else None)
         if st.button("View Details", key="b_pend", use_container_width=True):
             tpopup("Pending Delivery Quantity by UOM Drilldown",
-                   fdf[fdf["Still to be del."]>0].copy() if "Still to be del." in fdf.columns else fdf.iloc[0:0])
+                   pending_source_df[pending_source_df["Pending Qty"] > 0].copy() if "Pending Qty" in pending_source_df.columns else fdf.iloc[0:0])
 
     # ROW 3
     c7,c8,c9 = st.columns(3)
