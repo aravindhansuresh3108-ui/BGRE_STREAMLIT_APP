@@ -58,7 +58,15 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
     background: linear-gradient(90deg, #003893, #E31937); border-radius: 0 0 12px 12px;
 }
-.kpi-title { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 5px; flex-shrink: 0; }
+.kpi-title {
+    font-size: 10px;
+    font-weight: 800 !important;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+    flex-shrink: 0;
+}
 .kpi-value, .kpi-amount, .kpi-value-sm {
     font-size: 13px !important;
     font-weight: 300 !important;
