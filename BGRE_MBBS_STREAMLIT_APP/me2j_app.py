@@ -61,7 +61,7 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
 .kpi-title {
     font-size: 14px !important;
     font-weight: 1000 !important;
-    color: #0f172a !important;
+    color: #000000 !important;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-bottom: 10px;
