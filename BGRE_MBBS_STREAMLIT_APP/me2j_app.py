@@ -68,7 +68,7 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     flex-shrink: 0;
 }
 .kpi-value, .kpi-amount, .kpi-value-sm {
-    font-size: 13px !important;
+    font-size: 14px !important;
     font-weight: 300 !important;
     color: #003893 !important;
     line-height: 1.7;
