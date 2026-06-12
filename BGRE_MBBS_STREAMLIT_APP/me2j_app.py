@@ -59,12 +59,12 @@ html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif !important
     background: linear-gradient(90deg, #003893, #E31937); border-radius: 0 0 12px 12px;
 }
 .kpi-title {
-    font-size: 11px !important;
+    font-size: 13px !important;
     font-weight: 900 !important;
-    color: #334155 !important;
+    color: #0f172a !important;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 5px;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
     flex-shrink: 0;
 }
 .kpi-value, .kpi-amount, .kpi-value-sm {
