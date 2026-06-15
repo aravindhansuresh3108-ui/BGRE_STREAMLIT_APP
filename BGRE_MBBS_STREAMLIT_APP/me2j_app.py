@@ -880,7 +880,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Ass
 # TAB 1 – DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.caption("VERSION: ME2J Range Filters Always Visible Fix - 15 Jun 2026")
+    st.caption("VERSION: ME2J Inline Range + Indian Format Fix - 15 Jun 2026")
     df_all = load_data()
     df_all = clean_numeric(df_all, ["PO Value","PO Quantity","GR Qty",
                                      "Still to be del.","Still to be inv.","Net Price"])
@@ -908,80 +908,143 @@ with tab1:
     has_div   = div_col is not None
     has_date  = po_date_col in df_all.columns
 
-    if has_div:
-        div_opts = sorted(df_all[div_col].dropna().astype(str).unique().tolist())
-        sel_div_list = st.sidebar.multiselect("Purchase Org", div_opts, key="f_div", placeholder="All")
-    else: sel_div_list = []
+    # Helper: options must change based on already selected filters.
+    # This keeps each range directly below the relevant filters instead of a separate top section.
+    def _clean_options(source_df, col):
+        if col not in source_df.columns:
+            return []
+        return sorted(
+            source_df[col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .replace("", pd.NA)
+            .dropna()
+            .unique()
+            .tolist()
+        )
 
-    if has_date:
-        mn = df_all[po_date_col].min(); mx = df_all[po_date_col].max()
-        default_r = (mn.date() if pd.notna(mn) else date(2026,1,1),
-                     mx.date() if pd.notna(mx) else date(2026,3,31))
-        dr = st.sidebar.date_input("PO Date Range", value=default_r, key="f_date")
-        ds, de = (dr if isinstance(dr,tuple) and len(dr)==2 else (dr,dr))
-    else: ds = de = None
+    def _apply_multiselect(current_df, col, label, key, placeholder="All"):
+        if col not in current_df.columns:
+            return current_df, []
+        opts = _clean_options(current_df, col)
+        selected = st.sidebar.multiselect(label, opts, key=key, placeholder=placeholder)
+        if selected:
+            current_df = current_df[current_df[col].astype(str).isin([str(x) for x in selected])]
+        return current_df, selected
 
-    if has_proj:
-        proj_opts = sorted(df_all[proj_col].dropna().astype(str).unique().tolist())
-        sel_proj_list = st.sidebar.multiselect("Project", proj_opts, key="f_proj", placeholder="All projects")
-    else: sel_proj_list = []
+    def _display_range_hint(col, source_df, decimals=2):
+        if col not in source_df.columns:
+            return
+        s = pd.to_numeric(source_df[col], errors="coerce").dropna()
+        if len(s) == 0:
+            return
+        st.sidebar.caption(
+            f"Available: {indian_number_format(s.min(), decimals)} - {indian_number_format(s.max(), decimals)}"
+        )
 
-    if has_vendor:
-        vnd_opts = sorted(df_all["Vendor Name"].dropna().astype(str).unique().tolist())
-        sel_vendor_list = st.sidebar.multiselect("Vendor", vnd_opts, key="f_vendor", placeholder="All")
-    else: sel_vendor_list = []
-
-    if has_plant:
-        plt_opts = sorted(df_all["Plant"].dropna().astype(str).unique().tolist())
-        sel_plant_list = st.sidebar.multiselect("Plant", plt_opts, key="f_plant", placeholder="All")
-    else: sel_plant_list = []
-
-    if has_doc:
-        doc_opts = sorted(df_all["Doc Type"].dropna().astype(str).unique().tolist())
-        sel_doc_list = st.sidebar.multiselect("Doc Type", doc_opts, key="f_doc", placeholder="All")
-    else: sel_doc_list = []
-
-    if has_matl:
-        matl_opts = sorted(df_all["Matl Group"].dropna().astype(str).unique().tolist())
-        sel_matl_list = st.sidebar.multiselect("Material Group", matl_opts, key="f_matl", placeholder="All")
-    else: sel_matl_list = []
-
-    if has_mat_code:
-        mc_opts = sorted(df_all["Material Code"].dropna().astype(str).unique().tolist())
-        sel_mc_list = st.sidebar.multiselect("Material Code", mc_opts, key="f_mc", placeholder="All")
-    else: sel_mc_list = []
-
-    # Apply filters
     fdf = df_all.copy()
-    if has_div    and sel_div_list:    fdf = fdf[fdf[div_col].astype(str).isin(sel_div_list)]
-    if has_date   and ds and de:       fdf = fdf[(fdf[po_date_col]>=pd.Timestamp(ds))&(fdf[po_date_col]<=pd.Timestamp(de))]
-    if has_proj   and sel_proj_list:   fdf = fdf[fdf[proj_col].astype(str).isin(sel_proj_list)]
-    if has_vendor and sel_vendor_list: fdf = fdf[fdf["Vendor Name"].astype(str).isin(sel_vendor_list)]
-    if has_plant  and sel_plant_list:  fdf = fdf[fdf["Plant"].astype(str).isin(sel_plant_list)]
-    if has_doc    and sel_doc_list:    fdf = fdf[fdf["Doc Type"].astype(str).isin(sel_doc_list)]
-    if has_matl   and sel_matl_list:   fdf = fdf[fdf["Matl Group"].astype(str).isin(sel_matl_list)]
-    if has_mat_code and sel_mc_list:   fdf = fdf[fdf["Material Code"].astype(str).isin(sel_mc_list)]
 
-    # Additional client-requested range filters
-    # IMPORTANT: widget range is calculated from df_all, so it remains visible even if selected filters return 0 rows.
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Range Filters")
+    # 1) Purchase Org
+    if has_div:
+        fdf, sel_div_list = _apply_multiselect(fdf, div_col, "Purchase Org", "f_div", "All")
+    else:
+        sel_div_list = []
+
+    # 2) PO Date Range
+    if has_date:
+        source_dates = pd.to_datetime(fdf[po_date_col], errors="coerce", dayfirst=True)
+        if source_dates.notna().sum() > 0:
+            mn = source_dates.min()
+            mx = source_dates.max()
+            default_r = (mn.date(), mx.date())
+            dr = st.sidebar.date_input("PO Date Range", value=default_r, key="f_date")
+            ds, de = (dr if isinstance(dr, tuple) and len(dr) == 2 else (dr, dr))
+            if ds and de:
+                fdf = fdf[(fdf[po_date_col] >= pd.Timestamp(ds)) & (fdf[po_date_col] <= pd.Timestamp(de))]
+        else:
+            ds = de = None
+    else:
+        ds = de = None
+
+    # 3) Delivery Date Range - placed immediately with date filter, not as separate range block.
     if "Del Date" in fdf.columns:
-        fdf = apply_date_range_sidebar(fdf, "Del Date", "Delivery Date Range", source_df=df_all)
-    if pv_col in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0, source_df=df_all)
+        fdf = apply_date_range_sidebar(fdf, "Del Date", "Delivery Date Range", source_df=fdf)
+
+    # 4) Project
+    if has_proj:
+        fdf, sel_proj_list = _apply_multiselect(fdf, proj_col, "Project", "f_proj", "All projects")
+    else:
+        sel_proj_list = []
+
+    # 5) Vendor + value range below vendor, as requested.
+    if has_vendor:
+        fdf, sel_vendor_list = _apply_multiselect(fdf, "Vendor Name", "Vendor", "f_vendor", "All")
+        if pv_col in fdf.columns:
+            _display_range_hint(pv_col, fdf, 2)
+            fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0, source_df=fdf)
+    else:
+        sel_vendor_list = []
+        if pv_col in fdf.columns:
+            _display_range_hint(pv_col, fdf, 2)
+            fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0, source_df=fdf)
+
+    # 6) Plant
+    if has_plant:
+        fdf, sel_plant_list = _apply_multiselect(fdf, "Plant", "Plant", "f_plant", "All")
+    else:
+        sel_plant_list = []
+
+    # 7) Doc Type
+    if has_doc:
+        fdf, sel_doc_list = _apply_multiselect(fdf, "Doc Type", "Doc Type", "f_doc", "All")
+    else:
+        sel_doc_list = []
+
+    # 8) Material Group
+    if has_matl:
+        fdf, sel_matl_list = _apply_multiselect(fdf, "Matl Group", "Material Group", "f_matl", "All")
+    else:
+        sel_matl_list = []
+
+    # 9) Material Code
+    if has_mat_code:
+        fdf, sel_mc_list = _apply_multiselect(fdf, "Material Code", "Material Code", "f_mc", "All")
+    else:
+        sel_mc_list = []
+
+    # 10) Quantity / delivery / invoice ranges below normal filters.
+    # Pending range is calculated cleanly as max(PO Quantity - GR Qty, 0);
+    # this avoids wrong negative values in the slider.
     if qty_col in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, qty_col, "PO Quantity Range", step=1.0, source_df=df_all)
+        _display_range_hint(qty_col, fdf, 3)
+        fdf = apply_number_range_sidebar(fdf, qty_col, "PO Quantity Range", step=1.0, source_df=fdf)
+
     if "GR Qty" in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "GR Qty", "GR Quantity Range", step=1.0, source_df=df_all)
-    if "Still to be del." in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "Still to be del.", "Pending Delivery Range", step=1.0, source_df=df_all)
+        _display_range_hint("GR Qty", fdf, 3)
+        fdf = apply_number_range_sidebar(fdf, "GR Qty", "GR Quantity Range", step=1.0, source_df=fdf)
+
+    if qty_col in fdf.columns and "GR Qty" in fdf.columns:
+        fdf["_Pending Delivery Range"] = (pd.to_numeric(fdf[qty_col], errors="coerce").fillna(0) - pd.to_numeric(fdf["GR Qty"], errors="coerce").fillna(0)).clip(lower=0)
+        _display_range_hint("_Pending Delivery Range", fdf, 3)
+        fdf = apply_number_range_sidebar(fdf, "_Pending Delivery Range", "Pending Delivery Range", step=1.0, source_df=fdf)
+
     if "Still to be inv." in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "Still to be inv.", "Still to be Invoice Range", step=1.0, source_df=df_all)
+        fdf["_Still to be Invoice Range"] = pd.to_numeric(fdf["Still to be inv."], errors="coerce").fillna(0).clip(lower=0)
+        _display_range_hint("_Still to be Invoice Range", fdf, 3)
+        fdf = apply_number_range_sidebar(fdf, "_Still to be Invoice Range", "Still to be Invoice Range", step=1.0, source_df=fdf)
+
     if "To be inv." in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "To be inv.", "To be Invoice Range", step=1.0, source_df=df_all)
+        fdf["_To be Invoice Range"] = pd.to_numeric(fdf["To be inv."], errors="coerce").fillna(0).clip(lower=0)
+        _display_range_hint("_To be Invoice Range", fdf, 3)
+        fdf = apply_number_range_sidebar(fdf, "_To be Invoice Range", "To be Invoice Range", step=1.0, source_df=fdf)
+
     if "Net Price" in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "Net Price", "Net Price Range", step=1.0, source_df=df_all)
+        _display_range_hint("Net Price", fdf, 2)
+        fdf = apply_number_range_sidebar(fdf, "Net Price", "Net Price Range", step=1.0, source_df=fdf)
+
+    # Remove internal helper range columns before summary, tables, and download.
+    fdf = fdf.drop(columns=[c for c in fdf.columns if str(c).startswith("_")], errors="ignore")
 
     # Header
     sf_ts_hdr, _ = get_snowflake_last_updated()
