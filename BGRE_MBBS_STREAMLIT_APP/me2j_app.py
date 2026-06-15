@@ -171,37 +171,168 @@ def get_snowflake_last_updated():
 def clear_all_caches(): st.cache_data.clear()
 
 def num_fmt(v):
-    try: return f"{float(v):,.0f}"
-    except: return "0"
+    try:
+        return indian_number_format(v, 0)
+    except Exception:
+        return "0"
 
 # FIX: 3 decimal places for quantities — no rounding confusion
 def qty_fmt(v):
     try:
         f = float(v)
-        if f == 0: return None          # Return None so caller can skip zeros
-        if f == int(f): return f"{f:,.0f}"
-        return f"{f:,.3f}"
-    except: return None
+        if f == 0:
+            return None
+        return indian_number_format(f, 3)
+    except Exception:
+        return None
 
 def compact_inr(v):
-    try: v = float(v)
-    except: v = 0.0
-    if v >= 1e7: return f"₹ {v/1e7:,.2f} Cr"
-    if v >= 1e5: return f"₹ {v/1e5:,.2f} L"
-    return f"₹ {v:,.2f}"
+    return compact_indian_amount(v, "INR")
 
 def compact_usd(v):
-    try: v = float(v)
-    except: v = 0.0
-    if v >= 1e6: return f"$ {v/1e6:,.2f} M"
-    if v >= 1e3: return f"$ {v/1e3:,.2f} K"
-    return f"$ {v:,.2f}"
+    return compact_indian_amount(v, "USD")
 
 def clean_numeric(df, cols):
     for c in cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     return df
+
+
+def indian_number_format(value, decimals=2):
+    """Format numbers in Indian comma style."""
+    try:
+        if pd.isna(value):
+            return "-"
+        num = float(value)
+    except Exception:
+        return value
+
+    sign = "-" if num < 0 else ""
+    num = abs(num)
+    fixed = f"{num:.{decimals}f}"
+    integer_part, decimal_part = fixed.split(".") if "." in fixed else (fixed, "")
+
+    if len(integer_part) <= 3:
+        formatted = integer_part
+    else:
+        last_three = integer_part[-3:]
+        remaining = integer_part[:-3]
+        parts = []
+        while len(remaining) > 2:
+            parts.insert(0, remaining[-2:])
+            remaining = remaining[:-2]
+        if remaining:
+            parts.insert(0, remaining)
+        formatted = ",".join(parts + [last_three])
+
+    if decimals == 0:
+        return sign + formatted
+    return sign + formatted + "." + decimal_part
+
+
+def compact_indian_amount(value, currency="INR"):
+    """Business readable amount without currency symbols."""
+    try:
+        value = float(value)
+    except Exception:
+        value = 0.0
+
+    currency = str(currency).upper().strip()
+
+    if currency == "INR":
+        if abs(value) >= 1e7:
+            return f"INR {value/1e7:,.2f} Cr"
+        if abs(value) >= 1e5:
+            return f"INR {value/1e5:,.2f} Lakh"
+        return f"INR {indian_number_format(value, 2)}"
+
+    if currency == "USD":
+        if abs(value) >= 1e6:
+            return f"USD {value/1e6:,.2f} M"
+        if abs(value) >= 1e3:
+            return f"USD {value/1e3:,.2f} K"
+        return f"USD {value:,.2f}"
+
+    return indian_number_format(value, 2)
+
+
+def format_dataframe_indian(df):
+    """Format all numeric display columns in Indian comma style."""
+    out = df.copy()
+
+    amount_keywords = ["VALUE", "AMOUNT", "PRICE", "INR", "USD", "TO BE INV", "INV"]
+    qty_keywords = ["QTY", "QUANTITY", "DEL", "GR QTY", "PO QTY"]
+    count_keywords = ["COUNT", "RECORDS", "POS", "PROJECTS", "VENDORS", "GROUPS", "ITEM COUNT"]
+
+    for col in out.columns:
+        upper_col = str(col).upper()
+        numeric = pd.to_numeric(out[col], errors="coerce")
+        if numeric.notna().sum() == 0:
+            continue
+
+        if any(k in upper_col for k in amount_keywords):
+            out[col] = numeric.apply(lambda x: indian_number_format(x, 2))
+        elif any(k in upper_col for k in qty_keywords):
+            out[col] = numeric.apply(lambda x: indian_number_format(x, 3))
+        elif any(k in upper_col for k in count_keywords):
+            out[col] = numeric.apply(lambda x: indian_number_format(x, 0))
+
+    return out
+
+
+def apply_number_range_sidebar(df, col, label=None, step=1.0):
+    """Sidebar range filter for numeric columns."""
+    if col not in df.columns:
+        return df
+
+    s = pd.to_numeric(df[col], errors="coerce")
+    if s.notna().sum() == 0:
+        return df
+
+    min_v = float(s.min())
+    max_v = float(s.max())
+
+    if min_v == max_v:
+        return df
+
+    selected = st.sidebar.slider(
+        label or f"{col} Range",
+        min_value=min_v,
+        max_value=max_v,
+        value=(min_v, max_v),
+        step=step,
+        key=f"range_{col}"
+    )
+
+    return df[s.between(selected[0], selected[1], inclusive="both")]
+
+
+def apply_date_range_sidebar(df, col, label=None):
+    """Sidebar date range filter for date columns."""
+    if col not in df.columns:
+        return df
+
+    parsed = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
+    if parsed.notna().sum() == 0:
+        return df
+
+    mn = parsed.min()
+    mx = parsed.max()
+    selected = st.sidebar.date_input(
+        label or f"{col} Range",
+        value=(mn.date(), mx.date()),
+        min_value=mn.date(),
+        max_value=mx.date(),
+        key=f"date_range_{col}"
+    )
+
+    if isinstance(selected, tuple) and len(selected) == 2:
+        start_dt, end_dt = selected
+        return df[(parsed.dt.date >= start_dt) & (parsed.dt.date <= end_dt)]
+
+    return df
+
 
 def kpi_card(title, main_value, sub_lines=None, is_amount=False):
     # Keep all values inside summary cards in the same size and weight.
@@ -247,7 +378,7 @@ def detail_table(df, rows=25, height=400):
 
     # First view: normal readable preview table
     st.dataframe(
-        display_df,
+        format_dataframe_indian(display_df),
         use_container_width=True,
         hide_index=True,
         height=height
@@ -262,7 +393,7 @@ def detail_table(df, rows=25, height=400):
 
     if show_excel:
         if AgGrid is not None:
-            gb = GridOptionsBuilder.from_dataframe(display_df)
+            gb = GridOptionsBuilder.from_dataframe(format_dataframe_indian(display_df))
             gb.configure_default_column(
                 filter=True,
                 sortable=True,
@@ -274,7 +405,7 @@ def detail_table(df, rows=25, height=400):
                 paginationPageSize=25
             )
             AgGrid(
-                display_df,
+                format_dataframe_indian(display_df),
                 gridOptions=gb.build(),
                 height=height,
                 fit_columns_on_grid_load=False,
@@ -530,9 +661,9 @@ def show_popup(title, df):
             st.info("No records available for this selection.")
             return
         preview_df = tdf if max_preview_rows is None else tdf.head(max_preview_rows)
-        st.caption(f"Rows shown: {len(preview_df):,} of {len(tdf):,}")
+        st.caption(f"Rows shown: {indian_number_format(len(preview_df),0)} of {indian_number_format(len(tdf),0)}")
         st.dataframe(
-            preview_df,
+            format_dataframe_indian(preview_df),
             use_container_width=True,
             hide_index=True,
             height=min(height, 80 + max(1, min(len(preview_df), 14)) * 35)
@@ -545,7 +676,7 @@ def show_popup(title, df):
         )
         if show_excel:
             if AgGrid is not None:
-                gb = GridOptionsBuilder.from_dataframe(tdf)
+                gb = GridOptionsBuilder.from_dataframe(format_dataframe_indian(tdf))
                 gb.configure_default_column(filter=True, sortable=True, resizable=True, floatingFilter=True)
                 for nc in ["PO Count", "Vendor Count", "Project Count", "Material Group Count", "Line Item Count", "PO Quantity", "GR Qty", "Pending Qty", "Extra Receipt Qty", "PO Value", "PO Value INR", "PO Value USD", "Net Price"]:
                     if nc in tdf.columns:
@@ -555,7 +686,7 @@ def show_popup(title, df):
                 opts["paginationPageSize"] = 50
                 opts["enableCellTextSelection"] = True
                 AgGrid(
-                    tdf,
+                    format_dataframe_indian(tdf),
                     gridOptions=opts,
                     height=height,
                     fit_columns_on_grid_load=False,
@@ -707,7 +838,7 @@ def show_popup(title, df):
         else:
             show_table(df, "Selected records.", height=420)
 
-    csv = df.to_csv(index=False).encode("utf-8")
+    csv = format_dataframe_indian(df).to_csv(index=False).encode("utf-8")
     safe = title[:15].replace(" ", "_")
     st.download_button("⬇ Download Full Selected Data", csv, f"ME2J_{safe}.csv", "text/csv",
                        use_container_width=True, key=f"dl_pop_{safe}_{len(df)}")
@@ -735,7 +866,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Ass
 # TAB 1 – DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.caption("VERSION: ME2J Client Summary Pending Fix - 11 Jun 2026")
+    st.caption("VERSION: ME2J Multi Filter Range + Indian Format Fix - 15 Jun 2026")
     df_all = load_data()
     df_all = clean_numeric(df_all, ["PO Value","PO Quantity","GR Qty",
                                      "Still to be del.","Still to be inv.","Net Price"])
@@ -817,6 +948,25 @@ with tab1:
     if has_matl   and sel_matl_list:   fdf = fdf[fdf["Matl Group"].astype(str).isin(sel_matl_list)]
     if has_mat_code and sel_mc_list:   fdf = fdf[fdf["Material Code"].astype(str).isin(sel_mc_list)]
 
+    # Additional client-requested range filters
+    # Existing filters support multi-select. These range filters add date/number range filtering.
+    if "Del Date" in fdf.columns:
+        fdf = apply_date_range_sidebar(fdf, "Del Date", "Delivery Date Range")
+    if pv_col in fdf.columns:
+        fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0)
+    if qty_col in fdf.columns:
+        fdf = apply_number_range_sidebar(fdf, qty_col, "PO Quantity Range", step=1.0)
+    if "GR Qty" in fdf.columns:
+        fdf = apply_number_range_sidebar(fdf, "GR Qty", "GR Quantity Range", step=1.0)
+    if "Still to be del." in fdf.columns:
+        fdf = apply_number_range_sidebar(fdf, "Still to be del.", "Pending Delivery Range", step=1.0)
+    if "Still to be inv." in fdf.columns:
+        fdf = apply_number_range_sidebar(fdf, "Still to be inv.", "Still to be Invoice Range", step=1.0)
+    if "To be inv." in fdf.columns:
+        fdf = apply_number_range_sidebar(fdf, "To be inv.", "To be Invoice Range", step=1.0)
+    if "Net Price" in fdf.columns:
+        fdf = apply_number_range_sidebar(fdf, "Net Price", "Net Price Range", step=1.0)
+
     # Header
     sf_ts_hdr, _ = get_snowflake_last_updated()
     st.markdown(f"""
@@ -826,7 +976,7 @@ with tab1:
             <div class="dash-header-title">ME2J Procurement Dashboard</div>
             <div class="dash-header-sub">BGR Energy Systems · SAP Purchase Order Analytics</div>
             <span class="dash-period">📅 Jan 2026 – Mar 2026</span>
-            <div class="dash-refresh-info">Data Last Updated in Snowflake: {sf_ts_hdr} &nbsp;·&nbsp; {len(fdf):,} records filtered</div>
+            <div class="dash-refresh-info">Data Last Updated in Snowflake: {sf_ts_hdr} &nbsp;·&nbsp; {indian_number_format(len(fdf),0)} records filtered</div>
         </div>
     </div>""", unsafe_allow_html=True)
 
@@ -926,8 +1076,8 @@ with tab1:
     c4,c5,c6 = st.columns(3)
     with c4:
         kpi_card("PO Value by Currency",
-                 f"{compact_inr(inr_val)}  ({inr_val:,.0f})",
-                 sub_lines=[f"{compact_usd(usd_val)}  ({usd_val:,.0f})"] if usd_val>0 else None,
+                 f"{compact_inr(inr_val)}  ({indian_number_format(inr_val, 0)})",
+                 sub_lines=[f"{compact_usd(usd_val)}  ({indian_number_format(usd_val, 0)})"] if usd_val>0 else None,
                  is_amount=True)
         if st.button("View Details", key="b_val", use_container_width=True):
             tpopup("PO Value by Currency Drilldown",
@@ -1094,7 +1244,7 @@ with tab1:
     st.markdown('<hr class="styled-divider">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Detailed Data Preview</div>', unsafe_allow_html=True)
     detail_table(fdf, rows=25)
-    csv = fdf.to_csv(index=False).encode("utf-8")
+    csv = format_dataframe_indian(fdf).to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Download Filtered Data", csv, "ME2J_FILTERED.csv", "text/csv",
                        use_container_width=True, key="dl_main")
 
@@ -1141,7 +1291,7 @@ with tab2:
                 mask = mask | f2[col].astype(str).str.lower().str.contains(kw, na=False)
         f2 = f2[mask]
 
-    st.caption(f"Showing {len(f2):,} of {len(df2):,} records")
+    st.caption(f"Showing {indian_number_format(len(f2),0)} of {indian_number_format(len(df2),0)} records")
 
     # Excel-style filterable table
     # Format quantity columns to 3 decimal
@@ -1184,7 +1334,7 @@ with tab2:
 
     if show_excel_explorer:
         if AgGrid is not None:
-            gb = GridOptionsBuilder.from_dataframe(f2_display)
+            gb = GridOptionsBuilder.from_dataframe(format_dataframe_indian(f2_display))
             gb.configure_default_column(
                 sortable=True,
                 filter=True,
