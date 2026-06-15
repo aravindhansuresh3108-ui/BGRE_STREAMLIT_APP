@@ -281,17 +281,23 @@ def format_dataframe_indian(df):
     return out
 
 
-def apply_number_range_sidebar(df, col, label=None, step=1.0):
-    """Sidebar range filter for numeric columns."""
+def apply_number_range_sidebar(df, col, label=None, step=1.0, source_df=None):
+    """Sidebar range filter for numeric columns.
+    Widget min/max is taken from source_df so range stays visible even when current filters return 0 rows.
+    """
     if col not in df.columns:
         return df
 
-    s = pd.to_numeric(df[col], errors="coerce")
-    if s.notna().sum() == 0:
+    base = source_df if source_df is not None else df
+    if col not in base.columns:
+        base = df
+
+    source_s = pd.to_numeric(base[col], errors="coerce")
+    if source_s.notna().sum() == 0:
         return df
 
-    min_v = float(s.min())
-    max_v = float(s.max())
+    min_v = float(source_s.min())
+    max_v = float(source_s.max())
 
     if min_v == max_v:
         return df
@@ -305,20 +311,27 @@ def apply_number_range_sidebar(df, col, label=None, step=1.0):
         key=f"range_{col}"
     )
 
+    s = pd.to_numeric(df[col], errors="coerce")
     return df[s.between(selected[0], selected[1], inclusive="both")]
 
 
-def apply_date_range_sidebar(df, col, label=None):
-    """Sidebar date range filter for date columns."""
+def apply_date_range_sidebar(df, col, label=None, source_df=None):
+    """Sidebar date range filter for date columns.
+    Widget min/max is taken from source_df so range stays visible even when current filters return 0 rows.
+    """
     if col not in df.columns:
         return df
 
-    parsed = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
-    if parsed.notna().sum() == 0:
+    base = source_df if source_df is not None else df
+    if col not in base.columns:
+        base = df
+
+    source_parsed = pd.to_datetime(base[col], errors="coerce", dayfirst=True)
+    if source_parsed.notna().sum() == 0:
         return df
 
-    mn = parsed.min()
-    mx = parsed.max()
+    mn = source_parsed.min()
+    mx = source_parsed.max()
     selected = st.sidebar.date_input(
         label or f"{col} Range",
         value=(mn.date(), mx.date()),
@@ -329,6 +342,7 @@ def apply_date_range_sidebar(df, col, label=None):
 
     if isinstance(selected, tuple) and len(selected) == 2:
         start_dt, end_dt = selected
+        parsed = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
         return df[(parsed.dt.date >= start_dt) & (parsed.dt.date <= end_dt)]
 
     return df
@@ -866,7 +880,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Ass
 # TAB 1 – DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.caption("VERSION: ME2J Multi Filter Range + Indian Format Fix - 15 Jun 2026")
+    st.caption("VERSION: ME2J Range Filters Always Visible Fix - 15 Jun 2026")
     df_all = load_data()
     df_all = clean_numeric(df_all, ["PO Value","PO Quantity","GR Qty",
                                      "Still to be del.","Still to be inv.","Net Price"])
@@ -949,23 +963,25 @@ with tab1:
     if has_mat_code and sel_mc_list:   fdf = fdf[fdf["Material Code"].astype(str).isin(sel_mc_list)]
 
     # Additional client-requested range filters
-    # Existing filters support multi-select. These range filters add date/number range filtering.
+    # IMPORTANT: widget range is calculated from df_all, so it remains visible even if selected filters return 0 rows.
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Range Filters")
     if "Del Date" in fdf.columns:
-        fdf = apply_date_range_sidebar(fdf, "Del Date", "Delivery Date Range")
+        fdf = apply_date_range_sidebar(fdf, "Del Date", "Delivery Date Range", source_df=df_all)
     if pv_col in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0)
+        fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0, source_df=df_all)
     if qty_col in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, qty_col, "PO Quantity Range", step=1.0)
+        fdf = apply_number_range_sidebar(fdf, qty_col, "PO Quantity Range", step=1.0, source_df=df_all)
     if "GR Qty" in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "GR Qty", "GR Quantity Range", step=1.0)
+        fdf = apply_number_range_sidebar(fdf, "GR Qty", "GR Quantity Range", step=1.0, source_df=df_all)
     if "Still to be del." in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "Still to be del.", "Pending Delivery Range", step=1.0)
+        fdf = apply_number_range_sidebar(fdf, "Still to be del.", "Pending Delivery Range", step=1.0, source_df=df_all)
     if "Still to be inv." in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "Still to be inv.", "Still to be Invoice Range", step=1.0)
+        fdf = apply_number_range_sidebar(fdf, "Still to be inv.", "Still to be Invoice Range", step=1.0, source_df=df_all)
     if "To be inv." in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "To be inv.", "To be Invoice Range", step=1.0)
+        fdf = apply_number_range_sidebar(fdf, "To be inv.", "To be Invoice Range", step=1.0, source_df=df_all)
     if "Net Price" in fdf.columns:
-        fdf = apply_number_range_sidebar(fdf, "Net Price", "Net Price Range", step=1.0)
+        fdf = apply_number_range_sidebar(fdf, "Net Price", "Net Price Range", step=1.0, source_df=df_all)
 
     # Header
     sf_ts_hdr, _ = get_snowflake_last_updated()
