@@ -171,182 +171,37 @@ def get_snowflake_last_updated():
 def clear_all_caches(): st.cache_data.clear()
 
 def num_fmt(v):
-    try:
-        return indian_number_format(v, 0)
-    except Exception:
-        return "0"
+    try: return f"{float(v):,.0f}"
+    except: return "0"
 
 # FIX: 3 decimal places for quantities — no rounding confusion
 def qty_fmt(v):
     try:
         f = float(v)
-        if f == 0:
-            return None
-        return indian_number_format(f, 3)
-    except Exception:
-        return None
+        if f == 0: return None          # Return None so caller can skip zeros
+        if f == int(f): return f"{f:,.0f}"
+        return f"{f:,.3f}"
+    except: return None
 
 def compact_inr(v):
-    return compact_indian_amount(v, "INR")
+    try: v = float(v)
+    except: v = 0.0
+    if v >= 1e7: return f"₹ {v/1e7:,.2f} Cr"
+    if v >= 1e5: return f"₹ {v/1e5:,.2f} L"
+    return f"₹ {v:,.2f}"
 
 def compact_usd(v):
-    return compact_indian_amount(v, "USD")
+    try: v = float(v)
+    except: v = 0.0
+    if v >= 1e6: return f"$ {v/1e6:,.2f} M"
+    if v >= 1e3: return f"$ {v/1e3:,.2f} K"
+    return f"$ {v:,.2f}"
 
 def clean_numeric(df, cols):
     for c in cols:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     return df
-
-
-def indian_number_format(value, decimals=2):
-    """Format numbers in Indian comma style."""
-    try:
-        if pd.isna(value):
-            return "-"
-        num = float(value)
-    except Exception:
-        return value
-
-    sign = "-" if num < 0 else ""
-    num = abs(num)
-    fixed = f"{num:.{decimals}f}"
-    integer_part, decimal_part = fixed.split(".") if "." in fixed else (fixed, "")
-
-    if len(integer_part) <= 3:
-        formatted = integer_part
-    else:
-        last_three = integer_part[-3:]
-        remaining = integer_part[:-3]
-        parts = []
-        while len(remaining) > 2:
-            parts.insert(0, remaining[-2:])
-            remaining = remaining[:-2]
-        if remaining:
-            parts.insert(0, remaining)
-        formatted = ",".join(parts + [last_three])
-
-    if decimals == 0:
-        return sign + formatted
-    return sign + formatted + "." + decimal_part
-
-
-def compact_indian_amount(value, currency="INR"):
-    """Business readable amount without currency symbols."""
-    try:
-        value = float(value)
-    except Exception:
-        value = 0.0
-
-    currency = str(currency).upper().strip()
-
-    if currency == "INR":
-        if abs(value) >= 1e7:
-            return f"INR {value/1e7:,.2f} Cr"
-        if abs(value) >= 1e5:
-            return f"INR {value/1e5:,.2f} Lakh"
-        return f"INR {indian_number_format(value, 2)}"
-
-    if currency == "USD":
-        if abs(value) >= 1e6:
-            return f"USD {value/1e6:,.2f} M"
-        if abs(value) >= 1e3:
-            return f"USD {value/1e3:,.2f} K"
-        return f"USD {value:,.2f}"
-
-    return indian_number_format(value, 2)
-
-
-def format_dataframe_indian(df):
-    """Format all numeric display columns in Indian comma style."""
-    out = df.copy()
-
-    amount_keywords = ["VALUE", "AMOUNT", "PRICE", "INR", "USD", "TO BE INV", "INV"]
-    qty_keywords = ["QTY", "QUANTITY", "DEL", "GR QTY", "PO QTY"]
-    count_keywords = ["COUNT", "RECORDS", "POS", "PROJECTS", "VENDORS", "GROUPS", "ITEM COUNT"]
-
-    for col in out.columns:
-        upper_col = str(col).upper()
-        numeric = pd.to_numeric(out[col], errors="coerce")
-        if numeric.notna().sum() == 0:
-            continue
-
-        if any(k in upper_col for k in amount_keywords):
-            out[col] = numeric.apply(lambda x: indian_number_format(x, 2))
-        elif any(k in upper_col for k in qty_keywords):
-            out[col] = numeric.apply(lambda x: indian_number_format(x, 3))
-        elif any(k in upper_col for k in count_keywords):
-            out[col] = numeric.apply(lambda x: indian_number_format(x, 0))
-
-    return out
-
-
-def apply_number_range_sidebar(df, col, label=None, step=1.0, source_df=None):
-    """Sidebar range filter for numeric columns.
-    Widget min/max is taken from source_df so range stays visible even when current filters return 0 rows.
-    """
-    if col not in df.columns:
-        return df
-
-    base = source_df if source_df is not None else df
-    if col not in base.columns:
-        base = df
-
-    source_s = pd.to_numeric(base[col], errors="coerce")
-    if source_s.notna().sum() == 0:
-        return df
-
-    min_v = float(source_s.min())
-    max_v = float(source_s.max())
-
-    if min_v == max_v:
-        return df
-
-    selected = st.sidebar.slider(
-        label or f"{col} Range",
-        min_value=min_v,
-        max_value=max_v,
-        value=(min_v, max_v),
-        step=step,
-        key=f"range_{col}"
-    )
-
-    s = pd.to_numeric(df[col], errors="coerce")
-    return df[s.between(selected[0], selected[1], inclusive="both")]
-
-
-def apply_date_range_sidebar(df, col, label=None, source_df=None):
-    """Sidebar date range filter for date columns.
-    Widget min/max is taken from source_df so range stays visible even when current filters return 0 rows.
-    """
-    if col not in df.columns:
-        return df
-
-    base = source_df if source_df is not None else df
-    if col not in base.columns:
-        base = df
-
-    source_parsed = pd.to_datetime(base[col], errors="coerce", dayfirst=True)
-    if source_parsed.notna().sum() == 0:
-        return df
-
-    mn = source_parsed.min()
-    mx = source_parsed.max()
-    selected = st.sidebar.date_input(
-        label or f"{col} Range",
-        value=(mn.date(), mx.date()),
-        min_value=mn.date(),
-        max_value=mx.date(),
-        key=f"date_range_{col}"
-    )
-
-    if isinstance(selected, tuple) and len(selected) == 2:
-        start_dt, end_dt = selected
-        parsed = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
-        return df[(parsed.dt.date >= start_dt) & (parsed.dt.date <= end_dt)]
-
-    return df
-
 
 def kpi_card(title, main_value, sub_lines=None, is_amount=False):
     # Keep all values inside summary cards in the same size and weight.
@@ -392,7 +247,7 @@ def detail_table(df, rows=25, height=400):
 
     # First view: normal readable preview table
     st.dataframe(
-        format_dataframe_indian(display_df),
+        display_df,
         use_container_width=True,
         hide_index=True,
         height=height
@@ -407,7 +262,7 @@ def detail_table(df, rows=25, height=400):
 
     if show_excel:
         if AgGrid is not None:
-            gb = GridOptionsBuilder.from_dataframe(format_dataframe_indian(display_df))
+            gb = GridOptionsBuilder.from_dataframe(display_df)
             gb.configure_default_column(
                 filter=True,
                 sortable=True,
@@ -419,7 +274,7 @@ def detail_table(df, rows=25, height=400):
                 paginationPageSize=25
             )
             AgGrid(
-                format_dataframe_indian(display_df),
+                display_df,
                 gridOptions=gb.build(),
                 height=height,
                 fit_columns_on_grid_load=False,
@@ -675,9 +530,9 @@ def show_popup(title, df):
             st.info("No records available for this selection.")
             return
         preview_df = tdf if max_preview_rows is None else tdf.head(max_preview_rows)
-        st.caption(f"Rows shown: {indian_number_format(len(preview_df),0)} of {indian_number_format(len(tdf),0)}")
+        st.caption(f"Rows shown: {len(preview_df):,} of {len(tdf):,}")
         st.dataframe(
-            format_dataframe_indian(preview_df),
+            preview_df,
             use_container_width=True,
             hide_index=True,
             height=min(height, 80 + max(1, min(len(preview_df), 14)) * 35)
@@ -690,7 +545,7 @@ def show_popup(title, df):
         )
         if show_excel:
             if AgGrid is not None:
-                gb = GridOptionsBuilder.from_dataframe(format_dataframe_indian(tdf))
+                gb = GridOptionsBuilder.from_dataframe(tdf)
                 gb.configure_default_column(filter=True, sortable=True, resizable=True, floatingFilter=True)
                 for nc in ["PO Count", "Vendor Count", "Project Count", "Material Group Count", "Line Item Count", "PO Quantity", "GR Qty", "Pending Qty", "Extra Receipt Qty", "PO Value", "PO Value INR", "PO Value USD", "Net Price"]:
                     if nc in tdf.columns:
@@ -700,7 +555,7 @@ def show_popup(title, df):
                 opts["paginationPageSize"] = 50
                 opts["enableCellTextSelection"] = True
                 AgGrid(
-                    format_dataframe_indian(tdf),
+                    tdf,
                     gridOptions=opts,
                     height=height,
                     fit_columns_on_grid_load=False,
@@ -852,7 +707,7 @@ def show_popup(title, df):
         else:
             show_table(df, "Selected records.", height=420)
 
-    csv = format_dataframe_indian(df).to_csv(index=False).encode("utf-8")
+    csv = df.to_csv(index=False).encode("utf-8")
     safe = title[:15].replace(" ", "_")
     st.download_button("⬇ Download Full Selected Data", csv, f"ME2J_{safe}.csv", "text/csv",
                        use_container_width=True, key=f"dl_pop_{safe}_{len(df)}")
@@ -880,7 +735,7 @@ tab1, tab2, tab3 = st.tabs(["📊 Dashboard", "🔍 Data Explorer", "🤖 AI Ass
 # TAB 1 – DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    st.caption("VERSION: ME2J Inline Range + Indian Format Fix - 15 Jun 2026")
+    st.caption("VERSION: ME2J Inline Per-Filter Date Range Fix - 15 Jun 2026")
     df_all = load_data()
     df_all = clean_numeric(df_all, ["PO Value","PO Quantity","GR Qty",
                                      "Still to be del.","Still to be inv.","Net Price"])
@@ -906,145 +761,132 @@ with tab1:
     has_mat_code = "Material Code" in df_all.columns
     div_col   = "POrg" if "POrg" in df_all.columns else None
     has_div   = div_col is not None
+    del_date_col = "Del Date" if "Del Date" in df_all.columns else None
     has_date  = po_date_col in df_all.columns
+    has_del_date = del_date_col is not None
 
-    # Helper: options must change based on already selected filters.
-    # This keeps each range directly below the relevant filters instead of a separate top section.
-    def _clean_options(source_df, col):
-        if col not in source_df.columns:
-            return []
-        return sorted(
-            source_df[col]
-            .dropna()
-            .astype(str)
-            .str.strip()
-            .replace("", pd.NA)
-            .dropna()
-            .unique()
-            .tolist()
-        )
+    # Pending qty is needed for the inline numeric range filter.
+    if "PO Quantity" in df_all.columns and "GR Qty" in df_all.columns:
+        df_all["Pending Qty Filter"] = (df_all["PO Quantity"] - df_all["GR Qty"]).clip(lower=0)
+    elif "Still to be del." in df_all.columns:
+        df_all["Pending Qty Filter"] = pd.to_numeric(df_all["Still to be del."], errors="coerce").fillna(0).clip(lower=0)
+    else:
+        df_all["Pending Qty Filter"] = 0
 
-    def _apply_multiselect(current_df, col, label, key, placeholder="All"):
-        if col not in current_df.columns:
-            return current_df, []
-        opts = _clean_options(current_df, col)
-        selected = st.sidebar.multiselect(label, opts, key=key, placeholder=placeholder)
-        if selected:
-            current_df = current_df[current_df[col].astype(str).isin([str(x) for x in selected])]
-        return current_df, selected
+    def _full_date_range(col, start_fallback=date(2026,1,1), end_fallback=date(2026,3,31)):
+        if col in df_all.columns:
+            mn = df_all[col].min(); mx = df_all[col].max()
+            return (mn.date() if pd.notna(mn) else start_fallback,
+                    mx.date() if pd.notna(mx) else end_fallback)
+        return (start_fallback, end_fallback)
 
-    def _display_range_hint(col, source_df, decimals=2):
-        if col not in source_df.columns:
-            return
-        s = pd.to_numeric(source_df[col], errors="coerce").dropna()
-        if len(s) == 0:
-            return
-        st.sidebar.caption(
-            f"Available: {indian_number_format(s.min(), decimals)} - {indian_number_format(s.max(), decimals)}"
-        )
+    default_po_r = _full_date_range(po_date_col) if has_date else None
+    default_del_r = _full_date_range(del_date_col, date(2026,1,1), date(2026,12,31)) if has_del_date else None
 
+    def _date_pair(val):
+        if isinstance(val, tuple) and len(val) == 2:
+            return val
+        return (val, val)
+
+    def _date_range_changed(rng, default_rng):
+        if rng is None or default_rng is None:
+            return False
+        a, b = _date_pair(rng)
+        return a != default_rng[0] or b != default_rng[1]
+
+    def _inline_filter(label, col, options, key, placeholder="All"):
+        selected = st.sidebar.multiselect(label, options, key=key, placeholder=placeholder)
+        po_rng = del_rng = None
+        if has_date:
+            po_rng = st.sidebar.date_input(f"{label} - PO Date Range", value=default_po_r, key=f"{key}_po_date")
+        if has_del_date:
+            del_rng = st.sidebar.date_input(f"{label} - Delivery Date Range", value=default_del_r, key=f"{key}_del_date")
+        st.sidebar.markdown("---")
+        return selected, po_rng, del_rng
+
+    if has_div:
+        div_opts = sorted(df_all[div_col].dropna().astype(str).unique().tolist())
+        sel_div_list, div_po_rng, div_del_rng = _inline_filter("Purchase Org", div_col, div_opts, "f_div", "All")
+    else: sel_div_list, div_po_rng, div_del_rng = [], None, None
+
+    if has_proj:
+        proj_opts = sorted(df_all[proj_col].dropna().astype(str).unique().tolist())
+        sel_proj_list, proj_po_rng, proj_del_rng = _inline_filter("Project", proj_col, proj_opts, "f_proj", "All projects")
+    else: sel_proj_list, proj_po_rng, proj_del_rng = [], None, None
+
+    if has_vendor:
+        vnd_opts = sorted(df_all["Vendor Name"].dropna().astype(str).unique().tolist())
+        sel_vendor_list, vendor_po_rng, vendor_del_rng = _inline_filter("Vendor", "Vendor Name", vnd_opts, "f_vendor", "All")
+    else: sel_vendor_list, vendor_po_rng, vendor_del_rng = [], None, None
+
+    if has_plant:
+        plt_opts = sorted(df_all["Plant"].dropna().astype(str).unique().tolist())
+        sel_plant_list, plant_po_rng, plant_del_rng = _inline_filter("Plant", "Plant", plt_opts, "f_plant", "All")
+    else: sel_plant_list, plant_po_rng, plant_del_rng = [], None, None
+
+    if has_doc:
+        doc_opts = sorted(df_all["Doc Type"].dropna().astype(str).unique().tolist())
+        sel_doc_list, doc_po_rng, doc_del_rng = _inline_filter("Doc Type", "Doc Type", doc_opts, "f_doc", "All")
+    else: sel_doc_list, doc_po_rng, doc_del_rng = [], None, None
+
+    if has_matl:
+        matl_opts = sorted(df_all["Matl Group"].dropna().astype(str).unique().tolist())
+        sel_matl_list, matl_po_rng, matl_del_rng = _inline_filter("Material Group", "Matl Group", matl_opts, "f_matl", "All")
+    else: sel_matl_list, matl_po_rng, matl_del_rng = [], None, None
+
+    if has_mat_code:
+        mc_opts = sorted(df_all["Material Code"].dropna().astype(str).unique().tolist())
+        sel_mc_list, mc_po_rng, mc_del_rng = _inline_filter("Material Code", "Material Code", mc_opts, "f_mc", "All")
+    else: sel_mc_list, mc_po_rng, mc_del_rng = [], None, None
+
+    def _numeric_range(col, label, key):
+        if col not in df_all.columns:
+            return None
+        vals = pd.to_numeric(df_all[col], errors="coerce").fillna(0)
+        mn = float(vals.min()); mx = float(vals.max())
+        st.sidebar.caption(f"Available: {mn:,.3f} - {mx:,.3f}")
+        if mn == mx:
+            return (mn, mx)
+        return st.sidebar.slider(label, min_value=mn, max_value=mx, value=(mn, mx), key=key, format="%.2f")
+
+    po_qty_rng = _numeric_range("PO Quantity", "PO Quantity Range", "f_po_qty_rng") if "PO Quantity" in df_all.columns else None
+    gr_qty_rng = _numeric_range("GR Qty", "GR Quantity Range", "f_gr_qty_rng") if "GR Qty" in df_all.columns else None
+    pend_qty_rng = _numeric_range("Pending Qty Filter", "Pending Delivery Range", "f_pending_rng")
+
+    # Apply filters
     fdf = df_all.copy()
 
-    # 1) Purchase Org
-    if has_div:
-        fdf, sel_div_list = _apply_multiselect(fdf, div_col, "Purchase Org", "f_div", "All")
-    else:
-        sel_div_list = []
+    def _apply_date_range(ddf, col, rng):
+        if col and col in ddf.columns and rng:
+            s, e = _date_pair(rng)
+            return ddf[(ddf[col] >= pd.Timestamp(s)) & (ddf[col] <= pd.Timestamp(e))]
+        return ddf
 
-    # 2) PO Date Range
-    if has_date:
-        source_dates = pd.to_datetime(fdf[po_date_col], errors="coerce", dayfirst=True)
-        if source_dates.notna().sum() > 0:
-            mn = source_dates.min()
-            mx = source_dates.max()
-            default_r = (mn.date(), mx.date())
-            dr = st.sidebar.date_input("PO Date Range", value=default_r, key="f_date")
-            ds, de = (dr if isinstance(dr, tuple) and len(dr) == 2 else (dr, dr))
-            if ds and de:
-                fdf = fdf[(fdf[po_date_col] >= pd.Timestamp(ds)) & (fdf[po_date_col] <= pd.Timestamp(de))]
-        else:
-            ds = de = None
-    else:
-        ds = de = None
+    def _apply_inline(ddf, col, selected, po_rng=None, del_rng=None):
+        # Date range below each filter is applied when values are selected OR the date range is changed from full range.
+        active = bool(selected)
+        if selected:
+            ddf = ddf[ddf[col].astype(str).isin(selected)]
+        if has_date and po_rng and (active or _date_range_changed(po_rng, default_po_r)):
+            ddf = _apply_date_range(ddf, po_date_col, po_rng)
+        if has_del_date and del_rng and (active or _date_range_changed(del_rng, default_del_r)):
+            ddf = _apply_date_range(ddf, del_date_col, del_rng)
+        return ddf
 
-    # 3) Delivery Date Range - placed immediately with date filter, not as separate range block.
-    if "Del Date" in fdf.columns:
-        fdf = apply_date_range_sidebar(fdf, "Del Date", "Delivery Date Range", source_df=fdf)
+    if has_div:      fdf = _apply_inline(fdf, div_col, sel_div_list, div_po_rng, div_del_rng)
+    if has_proj:     fdf = _apply_inline(fdf, proj_col, sel_proj_list, proj_po_rng, proj_del_rng)
+    if has_vendor:   fdf = _apply_inline(fdf, "Vendor Name", sel_vendor_list, vendor_po_rng, vendor_del_rng)
+    if has_plant:    fdf = _apply_inline(fdf, "Plant", sel_plant_list, plant_po_rng, plant_del_rng)
+    if has_doc:      fdf = _apply_inline(fdf, "Doc Type", sel_doc_list, doc_po_rng, doc_del_rng)
+    if has_matl:     fdf = _apply_inline(fdf, "Matl Group", sel_matl_list, matl_po_rng, matl_del_rng)
+    if has_mat_code: fdf = _apply_inline(fdf, "Material Code", sel_mc_list, mc_po_rng, mc_del_rng)
 
-    # 4) Project
-    if has_proj:
-        fdf, sel_proj_list = _apply_multiselect(fdf, proj_col, "Project", "f_proj", "All projects")
-    else:
-        sel_proj_list = []
-
-    # 5) Vendor + value range below vendor, as requested.
-    if has_vendor:
-        fdf, sel_vendor_list = _apply_multiselect(fdf, "Vendor Name", "Vendor", "f_vendor", "All")
-        if pv_col in fdf.columns:
-            _display_range_hint(pv_col, fdf, 2)
-            fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0, source_df=fdf)
-    else:
-        sel_vendor_list = []
-        if pv_col in fdf.columns:
-            _display_range_hint(pv_col, fdf, 2)
-            fdf = apply_number_range_sidebar(fdf, pv_col, "PO Value Range", step=1000.0, source_df=fdf)
-
-    # 6) Plant
-    if has_plant:
-        fdf, sel_plant_list = _apply_multiselect(fdf, "Plant", "Plant", "f_plant", "All")
-    else:
-        sel_plant_list = []
-
-    # 7) Doc Type
-    if has_doc:
-        fdf, sel_doc_list = _apply_multiselect(fdf, "Doc Type", "Doc Type", "f_doc", "All")
-    else:
-        sel_doc_list = []
-
-    # 8) Material Group
-    if has_matl:
-        fdf, sel_matl_list = _apply_multiselect(fdf, "Matl Group", "Material Group", "f_matl", "All")
-    else:
-        sel_matl_list = []
-
-    # 9) Material Code
-    if has_mat_code:
-        fdf, sel_mc_list = _apply_multiselect(fdf, "Material Code", "Material Code", "f_mc", "All")
-    else:
-        sel_mc_list = []
-
-    # 10) Quantity / delivery / invoice ranges below normal filters.
-    # Pending range is calculated cleanly as max(PO Quantity - GR Qty, 0);
-    # this avoids wrong negative values in the slider.
-    if qty_col in fdf.columns:
-        _display_range_hint(qty_col, fdf, 3)
-        fdf = apply_number_range_sidebar(fdf, qty_col, "PO Quantity Range", step=1.0, source_df=fdf)
-
-    if "GR Qty" in fdf.columns:
-        _display_range_hint("GR Qty", fdf, 3)
-        fdf = apply_number_range_sidebar(fdf, "GR Qty", "GR Quantity Range", step=1.0, source_df=fdf)
-
-    if qty_col in fdf.columns and "GR Qty" in fdf.columns:
-        fdf["_Pending Delivery Range"] = (pd.to_numeric(fdf[qty_col], errors="coerce").fillna(0) - pd.to_numeric(fdf["GR Qty"], errors="coerce").fillna(0)).clip(lower=0)
-        _display_range_hint("_Pending Delivery Range", fdf, 3)
-        fdf = apply_number_range_sidebar(fdf, "_Pending Delivery Range", "Pending Delivery Range", step=1.0, source_df=fdf)
-
-    if "Still to be inv." in fdf.columns:
-        fdf["_Still to be Invoice Range"] = pd.to_numeric(fdf["Still to be inv."], errors="coerce").fillna(0).clip(lower=0)
-        _display_range_hint("_Still to be Invoice Range", fdf, 3)
-        fdf = apply_number_range_sidebar(fdf, "_Still to be Invoice Range", "Still to be Invoice Range", step=1.0, source_df=fdf)
-
-    if "To be inv." in fdf.columns:
-        fdf["_To be Invoice Range"] = pd.to_numeric(fdf["To be inv."], errors="coerce").fillna(0).clip(lower=0)
-        _display_range_hint("_To be Invoice Range", fdf, 3)
-        fdf = apply_number_range_sidebar(fdf, "_To be Invoice Range", "To be Invoice Range", step=1.0, source_df=fdf)
-
-    if "Net Price" in fdf.columns:
-        _display_range_hint("Net Price", fdf, 2)
-        fdf = apply_number_range_sidebar(fdf, "Net Price", "Net Price Range", step=1.0, source_df=fdf)
-
-    # Remove internal helper range columns before summary, tables, and download.
-    fdf = fdf.drop(columns=[c for c in fdf.columns if str(c).startswith("_")], errors="ignore")
+    if po_qty_rng is not None and "PO Quantity" in fdf.columns:
+        fdf = fdf[(fdf["PO Quantity"] >= po_qty_rng[0]) & (fdf["PO Quantity"] <= po_qty_rng[1])]
+    if gr_qty_rng is not None and "GR Qty" in fdf.columns:
+        fdf = fdf[(fdf["GR Qty"] >= gr_qty_rng[0]) & (fdf["GR Qty"] <= gr_qty_rng[1])]
+    if pend_qty_rng is not None and "Pending Qty Filter" in fdf.columns:
+        fdf = fdf[(fdf["Pending Qty Filter"] >= pend_qty_rng[0]) & (fdf["Pending Qty Filter"] <= pend_qty_rng[1])]
 
     # Header
     sf_ts_hdr, _ = get_snowflake_last_updated()
@@ -1055,7 +897,7 @@ with tab1:
             <div class="dash-header-title">ME2J Procurement Dashboard</div>
             <div class="dash-header-sub">BGR Energy Systems · SAP Purchase Order Analytics</div>
             <span class="dash-period">📅 Jan 2026 – Mar 2026</span>
-            <div class="dash-refresh-info">Data Last Updated in Snowflake: {sf_ts_hdr} &nbsp;·&nbsp; {indian_number_format(len(fdf),0)} records filtered</div>
+            <div class="dash-refresh-info">Data Last Updated in Snowflake: {sf_ts_hdr} &nbsp;·&nbsp; {len(fdf):,} records filtered</div>
         </div>
     </div>""", unsafe_allow_html=True)
 
@@ -1155,8 +997,8 @@ with tab1:
     c4,c5,c6 = st.columns(3)
     with c4:
         kpi_card("PO Value by Currency",
-                 f"{compact_inr(inr_val)}  ({indian_number_format(inr_val, 0)})",
-                 sub_lines=[f"{compact_usd(usd_val)}  ({indian_number_format(usd_val, 0)})"] if usd_val>0 else None,
+                 f"{compact_inr(inr_val)}  ({inr_val:,.0f})",
+                 sub_lines=[f"{compact_usd(usd_val)}  ({usd_val:,.0f})"] if usd_val>0 else None,
                  is_amount=True)
         if st.button("View Details", key="b_val", use_container_width=True):
             tpopup("PO Value by Currency Drilldown",
@@ -1323,7 +1165,7 @@ with tab1:
     st.markdown('<hr class="styled-divider">', unsafe_allow_html=True)
     st.markdown('<div class="section-title">Detailed Data Preview</div>', unsafe_allow_html=True)
     detail_table(fdf, rows=25)
-    csv = format_dataframe_indian(fdf).to_csv(index=False).encode("utf-8")
+    csv = fdf.to_csv(index=False).encode("utf-8")
     st.download_button("⬇ Download Filtered Data", csv, "ME2J_FILTERED.csv", "text/csv",
                        use_container_width=True, key="dl_main")
 
@@ -1370,7 +1212,7 @@ with tab2:
                 mask = mask | f2[col].astype(str).str.lower().str.contains(kw, na=False)
         f2 = f2[mask]
 
-    st.caption(f"Showing {indian_number_format(len(f2),0)} of {indian_number_format(len(df2),0)} records")
+    st.caption(f"Showing {len(f2):,} of {len(df2):,} records")
 
     # Excel-style filterable table
     # Format quantity columns to 3 decimal
@@ -1413,7 +1255,7 @@ with tab2:
 
     if show_excel_explorer:
         if AgGrid is not None:
-            gb = GridOptionsBuilder.from_dataframe(format_dataframe_indian(f2_display))
+            gb = GridOptionsBuilder.from_dataframe(f2_display)
             gb.configure_default_column(
                 sortable=True,
                 filter=True,
