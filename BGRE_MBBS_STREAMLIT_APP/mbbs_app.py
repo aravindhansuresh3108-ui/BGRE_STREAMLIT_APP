@@ -324,7 +324,7 @@ def show_drilldown_popup(title, df):
 # Sidebar
 # ------------------------------------------------------------
 with st.sidebar:
-    st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
+    # st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
     st.caption("MBBS Inventory Dashboard")
     st.button("🔄 Refresh data", on_click=clear_all_caches, use_container_width=True)
     st.divider()
@@ -348,7 +348,7 @@ with st.sidebar:
 # ------------------------------------------------------------
 # Header
 # ------------------------------------------------------------
-st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
+# st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
 st.title("MBBS Inventory Dashboard")
 st.caption("Material stock, WBS-wise inventory value, valuation area analysis and AI-powered Q&A.")
 

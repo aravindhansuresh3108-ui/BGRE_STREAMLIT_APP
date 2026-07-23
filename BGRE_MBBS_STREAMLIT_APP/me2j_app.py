@@ -715,7 +715,7 @@ def show_popup(title, df):
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
+    # st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
     st.markdown("**ME2J Procurement Dashboard**")
     st.markdown("---")
     sf_ts, ts_source = get_snowflake_last_updated()
@@ -892,7 +892,6 @@ with tab1:
     sf_ts_hdr, _ = get_snowflake_last_updated()
     st.markdown(f"""
     <div class="dash-header">
-        {BGR_LOGO_SVG}
         <div class="dash-header-text">
             <div class="dash-header-title">ME2J Procurement Dashboard</div>
             <div class="dash-header-sub">BGR Energy Systems · SAP Purchase Order Analytics</div>
@@ -1301,7 +1300,6 @@ with tab3:
 
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#003893,#001f5b);border-radius:12px;padding:16px 22px;margin-bottom:16px;display:flex;align-items:center;gap:14px;">
-        {BGR_LOGO_SVG}
         <div>
             <div style="color:#fff;font-size:18px;font-weight:700;">ME2J Procurement AI Assistant</div>
             <div style="color:rgba(255,255,255,0.6);font-size:12px;margin-top:2px;">Powered by Snowflake Cortex Analyst · ME2J_PURCHASE_ORDER_REPORT</div>

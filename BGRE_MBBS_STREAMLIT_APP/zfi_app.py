@@ -508,7 +508,7 @@ with st.spinner("Loading ZFI Vendor SOA data from Snowflake..."):
 # Sidebar
 # ============================================================
 with st.sidebar:
-    st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
+    # st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
     st.caption("ZFI Vendor SOA Finance Dashboard | Currency: INR")
 
     st.button("🔄 Refresh data", on_click=clear_all_caches, use_container_width=True)
@@ -538,7 +538,7 @@ with st.sidebar:
 # ============================================================
 # Header
 # ============================================================
-st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
+# st.markdown(BGR_LOGO_SVG, unsafe_allow_html=True)
 st.title("ZFI Vendor Statement of Account - Finance Dashboard")
 st.caption("Vendor-wise outstanding balance, payable / advance split, transaction analytics, TDS, profit center, and AI-powered finance Q&A.")
 
