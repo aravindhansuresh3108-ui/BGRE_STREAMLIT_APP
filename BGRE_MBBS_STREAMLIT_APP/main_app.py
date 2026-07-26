@@ -2,7 +2,7 @@ import streamlit as st
 from pathlib import Path
 
 def login():
-    st.title("BGRE Dashboard Login")
+    st.title("Dashboard Login")
 
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
