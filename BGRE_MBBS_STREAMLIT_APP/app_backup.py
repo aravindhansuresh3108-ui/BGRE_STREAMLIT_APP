@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import snowflake.connector
 
-st.title("BGRE Live Dashboard")
+st.title("Live Dashboard")
 
 conn = snowflake.connector.connect(
     user="BGRE_CLIENT",
